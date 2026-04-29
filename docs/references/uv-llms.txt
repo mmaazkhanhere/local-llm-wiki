@@ -1,0 +1,4 @@
+Reference placeholder for Python environment and package-management notes.
+Current recommendation:
+- prefer a reproducible Python workflow
+- keep dependencies explicit

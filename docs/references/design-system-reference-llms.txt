@@ -1,0 +1,5 @@
+Reference placeholder for desktop UI and design-system notes relevant to this repo.
+Current direction:
+- PySide6 or PyQt6 desktop UI
+- trust-first status visibility
+- clear generated vs raw separation
