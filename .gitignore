@@ -1,0 +1,17 @@
+# Node
+node_modules/
+dist/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Test scratch
+.pytest_cache/
+.pytest-tmp/
+pytest-cache-files-*/
+
+# OS
+.DS_Store
+Thumbs.db

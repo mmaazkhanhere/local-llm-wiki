@@ -1,0 +1,51 @@
+- obsidian help — Shows available Obsidian CLI commands and usage help.
+- obsidian version — Displays the installed Obsidian version.
+- obsidian — Opens the interactive Obsidian CLI shell.
+- obsidian vault=Notes daily — Opens the daily note in the Notes vault.
+- obsidian vault="My Vault" search query="meeting notes" — Searches for “meeting notes” in the selected vault.
+- obsidian read file=Recipe — Reads the note named Recipe.
+- obsidian read path="Templates/Recipe.md" — Reads the exact file at that vault path.
+- obsidian daily — Opens today’s daily note.
+- obsidian daily:read — Prints the contents of today’s daily note.
+- obsidian daily:append content="- [ ] Buy groceries" — Adds text to the end of today’s daily note.
+- obsidian daily:prepend content="## Today" — Adds text to the beginning of today’s daily note.
+- obsidian create name="Trip to Paris" content="Notes here" open — Creates and opens a new note.
+- obsidian create path="Projects/App.md" template=Project — Creates a note from a template at a specific path.
+- obsidian open file="Trip to Paris" — Opens the note named Trip to Paris.
+- obsidian append file="Trip to Paris" content="More notes" — Appends text to an existing note.
+- obsidian prepend path="Projects/App.md" content="Status: active" — Prepends text to a specific note.
+- obsidian move file="Old Name" to="Archive/Old Name.md" — Moves a note to a new location.
+- obsidian rename file="Old Name" name="New Name" — Renames a note.
+- obsidian delete file="Scratch" — Deletes the specified note.
+- obsidian search query="meeting notes" — Searches the vault for matching notes.
+- obsidian search:context query="TODO" — Searches and shows surrounding context.
+- obsidian search:open query="project alpha" — Opens search results in Obsidian.
+- obsidian tags counts — Lists tags with usage counts.
+- obsidian tasks todo — Lists incomplete tasks.
+- obsidian tasks daily — Lists tasks from daily notes.
+- obsidian backlinks file="Project" — Shows notes linking back to Project.
+- obsidian links file="Project" — Shows links contained in Project.
+- obsidian unresolved — Lists unresolved internal links.
+- obsidian orphans — Lists notes with no incoming links.
+- obsidian deadends — Lists notes with no outgoing links.
+- obsidian properties active — Lists active note properties.
+- obsidian property:set file="Project" name=status value=active type=text — Sets a property on a note.
+- obsidian property:read file="Project" name=status — Reads a property value from a note.
+- obsidian property:remove file="Project" name=status — Removes a property from a note.
+- obsidian plugins — Lists installed plugins.
+- obsidian plugins:enabled — Lists enabled plugins.
+- obsidian plugin:enable id=calendar filter=community — Enables a community plugin.
+- obsidian plugin:disable id=calendar filter=community — Disables a community plugin.
+- obsidian themes — Lists available themes.
+- obsidian theme:set name="Minimal" — Changes the active Obsidian theme.
+- obsidian tabs — Lists open tabs.
+- obsidian recents — Lists recently opened notes.
+- obsidian workspace — Shows current workspace information.
+- obsidian workspace:save name=Writing — Saves the current workspace layout.
+- obsidian workspace:load name=Writing — Loads a saved workspace layout.
+- obsidian devtools — Opens Obsidian developer tools.
+- obsidian plugin:reload id=my-plugin — Reloads a plugin during development.
+- obsidian dev:screenshot path=screenshot.png — Takes a screenshot of Obsidian.
+- obsidian dev:console level=error — Shows console messages at the error level.
+- obsidian dev:dom selector=".workspace-tab-header" text — Reads DOM text matching a selector.
+- obsidian eval code="app.vault.getFiles().length" — Runs JavaScript inside Obsidian.

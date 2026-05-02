@@ -1,48 +1,44 @@
 # File Processing
 
-## Scope
+## Goal
 
-This spec covers how a raw file becomes generated Obsidian content.
+Turn a supported raw file into generated wiki artifacts without mutating the source file.
 
 ## Processing Contract
 
-1. detect supported file
+1. detect a candidate source file
 2. exclude app-owned and metadata folders
-3. debounce until stable write
-4. hash file
-5. skip if unchanged
-6. extract text
-7. store source document
-8. chunk text
-9. generate summary
-10. write summary
-11. update index and logs
+3. debounce until the file is stable
+4. hash the file
+5. skip unchanged files
+6. extract normalized text
+7. store source-document metadata
+8. create retrieval chunks
+9. generate wiki output
+10. write markdown atomically
+11. update index, logs, and status
 
-## Supported File Types
-
-Initial priority:
+## Initial File Priority
 
 - `.md`
 - `.txt`
 
-Next priority:
+## Next File Priority
 
 - `.pdf`
 - `.docx`
 - `.html`
 - `.htm`
-- `.png`
-- `.jpg`
-- `.jpeg`
-- `.webp`
+- image formats as pending or future work
 
-## Filename Normalization
+## Filename Rules
 
-Summary filename generation must:
+Generated filenames must:
 
-- preserve readability
-- sanitize invalid Windows characters
-- collapse whitespace
+- remain readable
+- be safe on Windows
+- sanitize forbidden characters
+- collapse duplicate whitespace
 - trim trailing spaces and periods
-- append page-type suffix
-- append short hash on collision
+- use deterministic suffixes
+- append a short hash only when needed to break collisions

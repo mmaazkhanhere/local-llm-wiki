@@ -1,2 +1,5 @@
-Reference placeholder for deployment/build notes if packaging moves beyond local dev later.
-Current MVP does not depend on Nixpacks.
+Reference placeholder for deployment and packaging notes.
+
+Current status:
+- the MVP is not coupled to Nixpacks
+- keep this file for future packaging guidance if deployment requirements expand

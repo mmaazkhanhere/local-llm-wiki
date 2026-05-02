@@ -1,0 +1,12 @@
+{
+  "name": "local-llm-wiki",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/desktop/electron"
+  ],
+  "scripts": {
+    "desktop:dev": "npm --workspace apps/desktop/electron run dev",
+    "desktop:build": "npm --workspace apps/desktop/electron run build"
+  }
+}

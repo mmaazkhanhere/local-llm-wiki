@@ -1,7 +1,15 @@
 # Product Specs Index
 
-## Specs
+These specs define observable product behavior.
 
-- [New User Onboarding](E:\Web 3.0\Generative AI\Github\local-llm-wiki\docs\product-specs\new-user-onboarding.md)
-- [File Processing](E:\Web 3.0\Generative AI\Github\local-llm-wiki\docs\product-specs\file-processing.md)
-- [Ask Experience](E:\Web 3.0\Generative AI\Github\local-llm-wiki\docs\product-specs\ask-experience.md)
+## Read Order
+
+1. [New User Onboarding](./new-user-onboarding.md)
+2. [File Processing](./file-processing.md)
+3. [Ask Experience](./ask-experience.md)
+
+## Usage
+
+- update these specs when behavior changes
+- keep implementation details out unless they affect observable behavior
+- add new specs here when a new workflow becomes product-defining

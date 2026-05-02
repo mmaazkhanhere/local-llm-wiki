@@ -1,34 +1,63 @@
-## Local LLM Wiki
+# Local LLM Wiki
 
-GUI-first desktop app for local Obsidian vault processing.
+Phase 0 delivers a runnable desktop shell:
 
-Implemented:
+- Electron desktop app
+- React renderer with basic navigation placeholders
+- Python FastAPI backend
+- Electron starts/stops backend automatically
+- Frontend health check against backend
 
-- `MVP-001` package skeleton, app entrypoint, config load/save
-- `MVP-002` vault setup and app-owned write-path guard
-- `MVP-003` vault scan with exclusions and supported-extension filtering
-- `MVP-004` SQLite schema initialization and persisted file status transitions
-- `MVP-005` SHA-256 idempotency behavior (`skipped_unchanged` on unchanged scans)
-- `MVP-006` `.md`/`.txt` extraction, title extraction, chunking, and persistence
-- `MVP-007` provider abstraction and Groq provider implementation
-- `MVP-008` source summary prompt, Markdown template, and atomic summary file write
-- `MVP-009` `_Index.md`, `_Processing Log.md`, and JSONL/SQLite audit logging on successful writes
-- `MVP-010` dashboard and activity visibility for counts, recent generated files, and recent errors
-- `MVP-011` Ask MVP with lexical retrieval over summaries/chunks and grounded citation output
+## Repository Layout
 
-### Launch GUI
-
-```bash
-uv run python -m llm_wiki.gui_app
+```text
+apps/
+  desktop/
+    electron/
+    backend/
+  android/
+packages/
+  shared/
+    prompts/
+    schema/
+tests/
+docs/
 ```
 
-### Packaged app
+## Prerequisites
 
-- GUI executable is built at:
-  - `dist\local-llm-wiki.exe`
+- Node.js 20+
+- npm 10+
+- Python 3.11+
+- `uv` installed and available in `PATH`
 
-### Run tests
+## Run Backend Tests
 
-```bash
+```powershell
+cd apps/desktop/backend
+uv sync --extra dev
 uv run pytest -q
 ```
+
+## Run Desktop App (Phase 0)
+
+```powershell
+cd E:\Web 3.0\Generative AI\Github\local-llm-wiki
+npm install
+npm run desktop:dev
+```
+
+What this starts:
+
+1. Vite dev server for React UI
+2. Electron app window
+3. Python backend process launched by Electron (`uv run uvicorn ...`)
+
+## Phase 0 Acceptance Mapping
+
+- Desktop app launches: `apps/desktop/electron` dev script
+- Python backend launches from Electron: Electron main process spawns backend
+- Frontend can call backend health check: renderer polls `/health` via preload bridge
+- Basic navigation exists: Dashboard, Raw Inbox, Proposed Updates, Wiki Browser, Ask, Lint, Settings
+- Tests pass: backend test suite
+- Project runnable by README instructions: commands above

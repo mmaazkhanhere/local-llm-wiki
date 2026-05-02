@@ -1,0 +1,83 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", "Inter", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f4f6fb;
+  color: #122033;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: linear-gradient(170deg, #1f2e49 0%, #0f1d33 100%);
+  color: #e6edf9;
+  padding: 24px 16px;
+}
+
+.sidebar h1 {
+  margin: 0 0 18px 0;
+  font-size: 1.1rem;
+}
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nav-btn {
+  text-align: left;
+  border: 1px solid #3b4f73;
+  background: transparent;
+  color: #dbe5f8;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.nav-btn.active {
+  background: #e8eefc;
+  color: #0f1d33;
+  border-color: #e8eefc;
+}
+
+.content {
+  padding: 20px;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid #d8deea;
+}
+
+.panel {
+  margin-top: 16px;
+  background: #ffffff;
+  border: 1px solid #d8deea;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.ok {
+  color: #0f7b3f;
+}
+
+.error {
+  color: #a32b2b;
+}

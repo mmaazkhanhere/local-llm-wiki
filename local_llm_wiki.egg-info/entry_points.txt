@@ -1,2 +1,0 @@
-[console_scripts]
-llm-wiki = llm_wiki.gui_app:main

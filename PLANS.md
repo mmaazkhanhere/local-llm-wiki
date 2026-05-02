@@ -1,38 +1,17 @@
 # Plans
 
-## Active Execution Plans
+Execution planning is tracked in `docs/exec-plans/`.
 
-See:
+Read in this order:
 
-- [MVP Foundation Plan](E:\Web 3.0\Generative AI\Github\local-llm-wiki\docs\exec-plans\active\001-mvp-foundation.md)
-- [Tech Debt Tracker](E:\Web 3.0\Generative AI\Github\local-llm-wiki\docs\exec-plans\tech-debt-tracker.md)
+1. `docs/exec-plans/active/`
+2. `docs/exec-plans/tech-debt-tracker.md`
+3. `IMPLEMENTATION_PLAN.md`
 
-## Delivery Order
+Rules:
 
-1. repository skeleton and config
-2. vault setup and exclusion rules
-3. database schema and file indexing
-4. markdown/text ingestion
-5. auto-write summary generation
-6. dashboard and activity visibility
-7. Q&A with simple text retrieval
-8. broader ingestion types
-9. flashcards and active recall
-10. Git integration
+- active plans describe the next concrete slice of work
+- completed plans preserve what shipped
+- debt entries record temporary compromises and their exit criteria
 
-## Ticketing Convention
-
-Use ticket IDs:
-
-- `MVP-###` for core delivery
-- `REL-###` for reliability work
-- `SEC-###` for security work
-- `DX-###` for tooling and developer experience
-
-Tickets should include:
-
-- objective
-- scope
-- dependencies
-- acceptance criteria
-- risks
+Top-level `PLANS.md` is only a router.

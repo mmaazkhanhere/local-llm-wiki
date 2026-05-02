@@ -1,4 +1,6 @@
-Reference placeholder for Python environment and package-management notes.
-Current recommendation:
+Reference notes for Python environment and dependency workflow.
+
+Current direction:
 - prefer a reproducible Python workflow
 - keep dependencies explicit
+- update this file if the repo standardizes on `uv` commands and lockfile policy

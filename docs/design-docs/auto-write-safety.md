@@ -2,27 +2,23 @@
 
 ## Decision
 
-The MVP auto-writes generated content instead of asking for pre-write approval.
+The repository is designed around generated writes landing automatically in app-owned areas.
 
 ## Why
 
-- lower friction
-- simpler workflow
-- faster path to usable Obsidian output
-
-## What Must Replace Manual Review
-
-- strict path ownership checks
-- generated-folder exclusions
-- bounded retries
-- explicit processing states
-- audit logs
-- post-write inspection UI
+- lower user friction
+- faster path from source to usable wiki
+- fewer review-queue mechanics in the MVP
 
 ## Required Safeguards
 
-1. Never write outside `LLM Wiki/` or `.llm-wiki/`.
-2. Use atomic writes.
-3. Fail closed on unsafe paths.
-4. Label generated files clearly in content and UI.
-5. Keep raw citations visible.
+1. Never write outside app-owned folders.
+2. Reject path traversal and unsafe path derivation.
+3. Use atomic markdown writes.
+4. Exclude generated folders from raw ingestion.
+5. Record generated writes in durable app state and a human-readable log.
+6. Surface failures instead of hiding partial success.
+
+## Consequence
+
+Because pre-write review is not the primary safety mechanism, write-scope enforcement and auditability are not optional.

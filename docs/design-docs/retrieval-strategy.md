@@ -1,25 +1,20 @@
 # Retrieval Strategy
 
-## MVP Retrieval
+## MVP Retrieval Order
 
-First pass uses simple text retrieval only.
+1. search generated wiki material first
+2. search raw source chunks second
+3. combine evidence carefully
+4. answer only within retrieved support
 
-Order:
+## Principles
 
-1. search generated summaries
-2. search raw source chunks
-3. combine evidence
-4. answer with citations
+- prefer the compiled wiki for speed and reuse
+- use raw material for verification and citation
+- if wiki text and raw evidence disagree, trust raw evidence
+- if support is partial, qualify the answer
+- if support is absent, refuse the claim
 
-## Why No Embeddings Yet
+## Deferred Complexity
 
-- not required for first-pass usefulness
-- reduces implementation complexity
-- avoids extra storage and provider coupling
-- keeps failure surface smaller
-
-## Answering Rules
-
-- if summary and raw chunk disagree, trust raw chunk
-- if raw support is partial, qualify the answer
-- if raw support is absent, say so explicitly
+Embeddings, vector databases, and heavy ranking systems are deferred until lexical retrieval is demonstrably inadequate.

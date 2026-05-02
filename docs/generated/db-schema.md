@@ -1,5 +1,7 @@
 # Database Schema
 
+This file documents the intended MVP schema and should be updated when the implementation materially changes it.
+
 ## MVP Tables
 
 ### `vaults`
@@ -93,8 +95,6 @@ CREATE TABLE audit_log (
 ```
 
 ## Deferred Tables
-
-Not required for the first delivery slice:
 
 - `qa_history`
 - `flashcards`

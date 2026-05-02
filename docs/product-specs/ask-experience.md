@@ -2,19 +2,18 @@
 
 ## Goal
 
-Let the user ask questions over processed material and receive grounded answers with citations.
+Answer questions from processed material using grounded evidence, not generic completion behavior.
 
 ## MVP Rules
 
-- simple text retrieval only
-- embeddings are not required
-- summaries searched first
-- raw chunks searched second
-- answers must cite evidence
-- unsupported claims must be refused
+- search generated wiki material first
+- search raw chunks second
+- cite evidence in the answer
+- refuse unsupported claims
+- preserve question state when provider calls fail
 
 ## Failure Rules
 
-- if no useful evidence is retrieved, answer `Not supported by the current sources`
-- if summary wording exceeds raw support, prefer raw support
-- if provider call fails, preserve question state and show retryable error
+- if retrieval is weak, respond with uncertainty
+- if evidence is missing, answer `Not supported by the current sources`
+- if wiki wording exceeds raw support, prefer raw support

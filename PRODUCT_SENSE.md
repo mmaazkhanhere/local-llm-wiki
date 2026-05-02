@@ -1,47 +1,17 @@
 # Product Sense
 
-## Core User Job
+Canonical product behavior lives in `docs/product-specs/` and `docs/design-docs/core-beliefs.md`.
 
-The user wants scattered notes and imported study material to become a navigable, source-grounded learning wiki inside Obsidian without hand-organizing every document.
+Primary product job:
 
-## MVP Promise
+- turn scattered learning material into a navigable, source-grounded wiki inside Obsidian
 
-The MVP promises:
+Primary product risk:
 
-- connect an existing vault
-- discover raw learning materials
-- generate readable source summaries
-- keep raw notes untouched
-- support grounded Q&A
+- false confidence from clean but weakly grounded output
 
-It does not promise:
+Read next:
 
-- perfect synthesis across all sources
-- deep concept map generation
-- full offline local-model support on day one
-- collaborative workflows
-
-## Product Risks
-
-The main product risk is false confidence.
-
-Failure pattern:
-
-- generated content looks cleaner than source material
-- user overtrusts it
-- answer quality appears stronger than source grounding
-
-Countermeasures:
-
-- cite raw sources
-- label generated pages clearly
-- say when support is weak or missing
-- prefer “not supported by current sources” over confident filler
-
-## UX Priority Order
-
-1. trust
-2. clarity
-3. speed
-4. breadth of formats
-5. advanced controls
+1. `docs/design-docs/core-beliefs.md`
+2. `docs/product-specs/index.md`
+3. `IMPLEMENTATION_PLAN.md`

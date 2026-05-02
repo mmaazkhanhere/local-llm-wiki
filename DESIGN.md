@@ -1,48 +1,17 @@
 # Design
 
-## Product Design Direction
+Canonical design guidance lives in `docs/design-docs/`.
 
-The app should feel like a focused knowledge utility, not a generic AI shell.
+Read in this order:
 
-Core design traits:
+1. `docs/design-docs/index.md`
+2. `docs/design-docs/core-beliefs.md`
+3. `docs/product-specs/index.md`
 
-- clear separation between raw notes and generated wiki
-- low-friction first-run setup
-- obvious processing status
-- explicit provenance and citations
-- restrained settings for MVP
+Design intent in one screen:
 
-## Primary Screens
+- the app should feel like a focused knowledge tool, not a generic AI shell
+- raw and generated content must stay visually and conceptually distinct
+- provenance, safety, and status visibility matter more than visual novelty
 
-1. First-run wizard
-2. Dashboard
-3. Sources
-4. LLM Wiki
-5. Ask
-6. Settings
-
-## UX Rules
-
-- make the selected vault obvious
-- label generated content as generated
-- make raw-source immutability legible in the UI
-- show processing errors in plain language
-- show provider connectivity status
-- keep destructive actions rare and explicit
-
-## Visual Direction
-
-- desktop-native feel over web-dashboard mimicry
-- typography should favor clarity over novelty
-- generated vs raw content should be visually distinct
-- citations should be easy to scan
-
-## MVP Omissions
-
-Do not design around:
-
-- collaborative workflows
-- plugin marketplaces
-- advanced prompt tuning
-- graph visualization
-- mobile layouts
+Update the docs under `docs/` first when design behavior changes.

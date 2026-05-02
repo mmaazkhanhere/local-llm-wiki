@@ -1,5 +1,7 @@
-Reference placeholder for desktop UI and design-system notes relevant to this repo.
+Reference notes for UI and design-system decisions that affect agent work in this repo.
+
 Current direction:
-- PySide6 or PyQt6 desktop UI
+- desktop-first experience
 - trust-first status visibility
-- clear generated vs raw separation
+- clear raw vs generated separation
+- readable, low-friction knowledge workflows

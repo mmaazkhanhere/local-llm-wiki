@@ -1,43 +1,42 @@
 # Quality Score
 
-## Quality Rubric
+Use this rubric when judging whether a slice is ready to land.
 
-Every milestone should be evaluated on a 100-point rubric.
+## 100-Point Rubric
 
 ### Safety: 30
 
 - raw notes never modified
 - writes restricted to app-owned folders
-- excluded folders never re-ingested
+- generated folders excluded from raw ingestion
 
 ### Reliability: 20
 
-- watcher handles repeated events safely
-- retries are bounded and correct
+- repeated watcher events are harmless
+- retries are bounded and intentional
 - failures are visible and recoverable
 
 ### Grounding: 20
 
-- summaries cite source evidence
-- Q&A answers are supported by retrieved material
+- generated claims cite evidence when practical
+- ask answers stay within retrieved support
 - unsupported claims are rejected
 
 ### Usability: 15
 
-- first-run setup is understandable
-- file states are visible
+- setup is understandable
+- states are visible
 - errors are comprehensible
 
 ### Maintainability: 15
 
-- provider abstraction is clean
-- schema is documented
-- modules are coherent
+- provider abstraction is narrow
+- schema and docs are current
 - tests cover critical paths
 
 ## Release Gate
 
-No MVP release candidate should ship unless:
+Do not treat an MVP slice as release-ready unless:
 
 - Safety >= 28
 - Reliability >= 16
