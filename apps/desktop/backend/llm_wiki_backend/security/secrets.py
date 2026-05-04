@@ -16,12 +16,28 @@ def save_groq_key(vault_path: Path, api_key: str) -> None:
     _save_encrypted_fallback(vault_path, api_key)
 
 
+def has_groq_key(vault_path: Path) -> bool:
+    if _try_has_keyring_key():
+        return True
+    return _fallback_key_exists(vault_path)
+
+
 def _try_save_keyring(api_key: str) -> bool:
     try:
         import keyring  # type: ignore
 
         keyring.set_password(SERVICE_NAME, KEY_NAME, api_key)
         return True
+    except Exception:
+        return False
+
+
+def _try_has_keyring_key() -> bool:
+    try:
+        import keyring  # type: ignore
+
+        saved = keyring.get_password(SERVICE_NAME, KEY_NAME)
+        return bool(saved)
     except Exception:
         return False
 
@@ -36,3 +52,15 @@ def _save_encrypted_fallback(vault_path: Path, api_key: str) -> None:
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except OSError as exc:
         raise SecretStorageError("Unable to persist provider key.") from exc
+
+
+def _fallback_key_exists(vault_path: Path) -> bool:
+    path = vault_path / ".llm-wiki" / "secrets.enc.json"
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    value = payload.get("groq_api_key")
+    return isinstance(value, str) and len(value.strip()) > 0

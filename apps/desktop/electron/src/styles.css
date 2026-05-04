@@ -94,7 +94,8 @@ body {
   width: fit-content;
 }
 
-input[type="password"] {
+input[type="password"],
+input[type="text"] {
   max-width: 420px;
   border: 1px solid #bcc9de;
   border-radius: 8px;

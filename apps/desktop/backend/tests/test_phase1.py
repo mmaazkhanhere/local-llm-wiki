@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import shutil
 import sqlite3
+import uuid
 from pathlib import Path
 
 import pytest
@@ -10,9 +12,21 @@ from llm_wiki_backend.core.config import load_config, save_config
 from llm_wiki_backend.core.errors import ConfigError
 from llm_wiki_backend.core.models import AppConfig
 from llm_wiki_backend.main import app
-from llm_wiki_backend.vault.service import detect_obsidian_cli
+from llm_wiki_backend.vault.service import REQUIRED_DIRECTORIES, detect_obsidian_cli
 
 client = TestClient(app)
+
+
+@pytest.fixture
+def vault_path() -> Path:
+    root = Path(__file__).resolve().parents[1] / ".test-work"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"vault-{uuid.uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=False)
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def test_health() -> None:
@@ -24,65 +38,87 @@ def test_health() -> None:
     assert "timestamp" in body
 
 
-def test_vault_select_warns_when_obsidian_missing(tmp_path: Path) -> None:
-    response = client.post("/vault/select", json={"path": str(tmp_path)})
+def test_vault_select_rejects_missing_path(vault_path: Path) -> None:
+    missing = vault_path / "does-not-exist"
+    response = client.post("/vault/select", json={"path": str(missing)})
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["detail"]
+
+
+def test_vault_select_rejects_file_path(vault_path: Path) -> None:
+    file_path = vault_path / "note.md"
+    file_path.write_text("x", encoding="utf-8")
+    response = client.post("/vault/select", json={"path": str(file_path)})
+    assert response.status_code == 400
+    assert "not a directory" in response.json()["detail"]
+
+
+def test_vault_select_warns_when_obsidian_missing(vault_path: Path) -> None:
+    response = client.post("/vault/select", json={"path": str(vault_path)})
     assert response.status_code == 200
     body = response.json()
     assert body["has_obsidian"] is False
     assert body["warning"]
 
 
-def test_vault_select_detects_obsidian(tmp_path: Path) -> None:
-    (tmp_path / ".obsidian").mkdir()
-    response = client.post("/vault/select", json={"path": str(tmp_path)})
+def test_vault_select_detects_obsidian(vault_path: Path) -> None:
+    (vault_path / ".obsidian").mkdir()
+    response = client.post("/vault/select", json={"path": str(vault_path)})
     assert response.status_code == 200
     assert response.json()["has_obsidian"] is True
 
 
-def test_bootstrap_creates_directories_files_db_and_config(tmp_path: Path) -> None:
-    response = client.post("/vault/bootstrap", json={"path": str(tmp_path)})
+def test_bootstrap_creates_all_required_directories(vault_path: Path) -> None:
+    response = client.post("/vault/bootstrap", json={"path": str(vault_path)})
+    assert response.status_code == 200
+
+    for rel in REQUIRED_DIRECTORIES:
+        assert (vault_path / rel).is_dir(), f"missing directory: {rel}"
+
+
+def test_bootstrap_creates_index_log_db_and_config(vault_path: Path) -> None:
+    response = client.post("/vault/bootstrap", json={"path": str(vault_path)})
     assert response.status_code == 200
     body = response.json()
-    assert (tmp_path / "Raw").is_dir()
-    assert (tmp_path / "Wiki").is_dir()
-    assert (tmp_path / ".llm-wiki").is_dir()
-    assert (tmp_path / "Wiki/index.md").is_file()
-    assert (tmp_path / "Wiki/log.md").is_file()
-    assert (tmp_path / ".llm-wiki/app.db").is_file()
-    assert (tmp_path / ".llm-wiki/config.json").is_file()
+    assert (vault_path / "Wiki/index.md").is_file()
+    assert (vault_path / "Wiki/log.md").is_file()
+    assert (vault_path / ".llm-wiki/app.db").is_file()
+    assert (vault_path / ".llm-wiki/config.json").is_file()
     assert body["database_path"].endswith(".llm-wiki\\app.db") or body["database_path"].endswith(
         ".llm-wiki/app.db"
     )
 
 
-def test_bootstrap_is_idempotent_for_existing_files(tmp_path: Path) -> None:
-    first = client.post("/vault/bootstrap", json={"path": str(tmp_path)})
+def test_bootstrap_is_idempotent_for_existing_files(vault_path: Path) -> None:
+    first = client.post("/vault/bootstrap", json={"path": str(vault_path)})
     assert first.status_code == 200
-    index_path = tmp_path / "Wiki/index.md"
-    original = index_path.read_text(encoding="utf-8")
-    second = client.post("/vault/bootstrap", json={"path": str(tmp_path)})
+    index_path = vault_path / "Wiki/index.md"
+    log_path = vault_path / "Wiki/log.md"
+    original_index = index_path.read_text(encoding="utf-8")
+    original_log = log_path.read_text(encoding="utf-8")
+
+    second = client.post("/vault/bootstrap", json={"path": str(vault_path)})
     assert second.status_code == 200
-    assert index_path.read_text(encoding="utf-8") == original
+    assert index_path.read_text(encoding="utf-8") == original_index
+    assert log_path.read_text(encoding="utf-8") == original_log
 
 
-def test_bootstrap_does_not_modify_unrelated_files(tmp_path: Path) -> None:
-    notes = tmp_path / "Personal"
+def test_bootstrap_does_not_modify_unrelated_files(vault_path: Path) -> None:
+    notes = vault_path / "Personal"
     notes.mkdir()
     untouched = notes / "note.md"
     untouched.write_text("do not change", encoding="utf-8")
     before = untouched.read_text(encoding="utf-8")
 
-    response = client.post("/vault/bootstrap", json={"path": str(tmp_path)})
+    response = client.post("/vault/bootstrap", json={"path": str(vault_path)})
     assert response.status_code == 200
-
-    after = untouched.read_text(encoding="utf-8")
-    assert after == before
+    assert untouched.read_text(encoding="utf-8") == before
 
 
-def test_database_contains_required_tables(tmp_path: Path) -> None:
-    response = client.post("/vault/bootstrap", json={"path": str(tmp_path)})
+def test_database_contains_required_tables(vault_path: Path) -> None:
+    response = client.post("/vault/bootstrap", json={"path": str(vault_path)})
     assert response.status_code == 200
-    db_path = tmp_path / ".llm-wiki/app.db"
+    db_path = vault_path / ".llm-wiki/app.db"
     expected = {
         "vaults",
         "files",
@@ -100,16 +136,16 @@ def test_database_contains_required_tables(tmp_path: Path) -> None:
     assert expected.issubset(actual)
 
 
-def test_vault_configure_saves_config_and_detects_git(tmp_path: Path) -> None:
-    (tmp_path / ".git").mkdir()
-    response = client.post("/vault/configure", json={"path": str(tmp_path)})
+def test_vault_configure_saves_config_and_detects_git(vault_path: Path) -> None:
+    (vault_path / ".git").mkdir()
+    response = client.post("/vault/configure", json={"path": str(vault_path)})
     assert response.status_code == 200
     body = response.json()
     assert body["git_detected"] is True
-    assert (tmp_path / ".llm-wiki/config.json").is_file()
+    assert (vault_path / ".llm-wiki/config.json").is_file()
 
 
-def test_provider_test_success_stores_secret(tmp_path: Path, monkeypatch) -> None:
+def test_provider_test_success_stores_secret(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_test(api_key: str, timeout_seconds: float = 10.0) -> tuple[bool, str]:
         assert api_key == "test-key"
         return True, "ok"
@@ -117,53 +153,83 @@ def test_provider_test_success_stores_secret(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr("llm_wiki_backend.api.routes.test_groq_connection", fake_test)
     response = client.post(
         "/provider/groq/test",
-        params={"vault_path": str(tmp_path)},
+        params={"vault_path": str(vault_path)},
         json={"api_key": "test-key"},
     )
     assert response.status_code == 200
     assert response.json()["connected"] is True
-    assert (tmp_path / ".llm-wiki/secrets.enc.json").is_file()
+    assert (vault_path / ".llm-wiki/secrets.enc.json").is_file()
 
 
-def test_provider_test_failure_does_not_store_secret(tmp_path: Path, monkeypatch) -> None:
+def test_provider_test_failure_does_not_store_secret(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_test(api_key: str, timeout_seconds: float = 10.0) -> tuple[bool, str]:
         return False, "bad auth"
 
     monkeypatch.setattr("llm_wiki_backend.api.routes.test_groq_connection", fake_test)
     response = client.post(
         "/provider/groq/test",
-        params={"vault_path": str(tmp_path)},
+        params={"vault_path": str(vault_path)},
         json={"api_key": "test-key"},
     )
     assert response.status_code == 200
     assert response.json()["connected"] is False
-    assert not (tmp_path / ".llm-wiki/secrets.enc.json").exists()
+    assert not (vault_path / ".llm-wiki/secrets.enc.json").exists()
 
 
-def test_config_roundtrip_read_write(tmp_path: Path) -> None:
-    config = AppConfig(vault_path=str(tmp_path))
-    save_config(config, tmp_path)
-    loaded = load_config(tmp_path)
+def test_provider_status_not_configured_by_default(vault_path: Path) -> None:
+    response = client.get("/provider/groq/status", params={"vault_path": str(vault_path)})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "groq"
+    assert body["configured"] is False
+    assert body["connected"] is False
+    assert body["default_text_model"] == "openai/gpt-oss-120b"
+
+
+def test_provider_status_configured_when_fallback_secret_exists(vault_path: Path) -> None:
+    secrets_dir = vault_path / ".llm-wiki"
+    secrets_dir.mkdir(parents=True, exist_ok=True)
+    (secrets_dir / "secrets.enc.json").write_text('{"groq_api_key":"dGVzdA=="}', encoding="utf-8")
+    response = client.get("/provider/groq/status", params={"vault_path": str(vault_path)})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configured"] is True
+    assert body["connected"] is True
+
+
+def test_config_roundtrip_read_write(vault_path: Path) -> None:
+    config = AppConfig(vault_path=str(vault_path))
+    save_config(config, vault_path)
+    loaded = load_config(vault_path)
     assert loaded is not None
-    assert loaded.vault_path == str(tmp_path)
+    assert loaded.vault_path == str(vault_path)
 
 
-def test_config_invalid_json_raises_error(tmp_path: Path) -> None:
-    config_dir = tmp_path / ".llm-wiki"
+def test_config_invalid_json_raises_error(vault_path: Path) -> None:
+    config_dir = vault_path / ".llm-wiki"
     config_dir.mkdir(parents=True)
     (config_dir / "config.json").write_text("{invalid", encoding="utf-8")
     with pytest.raises(ConfigError):
-        load_config(tmp_path)
+        load_config(vault_path)
 
 
-def test_config_invalid_schema_raises_error(tmp_path: Path) -> None:
-    config_dir = tmp_path / ".llm-wiki"
+def test_config_invalid_schema_raises_error(vault_path: Path) -> None:
+    config_dir = vault_path / ".llm-wiki"
     config_dir.mkdir(parents=True)
     (config_dir / "config.json").write_text('{"provider": {"provider": "groq"}}', encoding="utf-8")
     with pytest.raises(ConfigError):
-        load_config(tmp_path)
+        load_config(vault_path)
 
 
-def test_detect_obsidian_cli_when_not_installed(monkeypatch) -> None:
+def test_detect_obsidian_cli_when_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("llm_wiki_backend.vault.service.shutil.which", lambda _: None)
     assert detect_obsidian_cli() is False
+
+
+@pytest.mark.xfail(reason="Current bootstrap path does not handle invalid existing config gracefully.", strict=False)
+def test_bootstrap_handles_invalid_existing_config_safely(vault_path: Path) -> None:
+    config_dir = vault_path / ".llm-wiki"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.json").write_text("{invalid", encoding="utf-8")
+    response = client.post("/vault/bootstrap", json={"path": str(vault_path)})
+    assert response.status_code == 200

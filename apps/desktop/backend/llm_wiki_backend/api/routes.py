@@ -10,6 +10,7 @@ from llm_wiki_backend.core.models import (
     ConfigureVaultResponse,
     ProviderTestRequest,
     ProviderTestResponse,
+    ProviderStatusResponse,
     SelectVaultRequest,
     SelectVaultResponse,
     StatusResponse,
@@ -17,6 +18,7 @@ from llm_wiki_backend.core.models import (
 from llm_wiki_backend.db.service import initialize_database
 from llm_wiki_backend.llm.groq import test_groq_connection
 from llm_wiki_backend.security.secrets import save_groq_key
+from llm_wiki_backend.security.secrets import has_groq_key
 from llm_wiki_backend.vault.service import (
     create_required_directories,
     create_wiki_index_files,
@@ -110,3 +112,24 @@ def provider_test(request: ProviderTestRequest, vault_path: str) -> ProviderTest
     if connected:
         save_groq_key(vault, request.api_key)
     return ProviderTestResponse(connected=connected, message=message)
+
+
+@router.get("/provider/groq/status", response_model=ProviderStatusResponse)
+def provider_status(vault_path: str) -> ProviderStatusResponse:
+    try:
+        vault, _ = validate_vault(vault_path)
+    except VaultValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    config = load_config(vault) or AppConfig(vault_path=str(vault))
+    configured = has_groq_key(vault)
+    message = "Groq key configured." if configured else "Groq key not configured."
+    return ProviderStatusResponse(
+        configured=configured,
+        connected=configured,
+        message=message,
+        default_text_model=config.provider.default_text_model,
+        cheap_fast_model=config.provider.cheap_fast_model,
+        review_model=config.provider.review_model,
+        vision_model=config.provider.vision_model,
+    )

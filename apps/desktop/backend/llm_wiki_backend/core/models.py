@@ -67,6 +67,17 @@ class ProviderTestResponse(BaseModel):
     message: str
 
 
+class ProviderStatusResponse(BaseModel):
+    provider: str = "groq"
+    configured: bool
+    connected: bool
+    message: str
+    default_text_model: str
+    cheap_fast_model: str
+    review_model: str
+    vision_model: str | None = None
+
+
 class StatusResponse(BaseModel):
     vault_path: str
     has_obsidian: bool
