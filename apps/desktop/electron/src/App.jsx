@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+const LAST_VAULT_PATH_KEY = "local-llm-wiki:last-vault-path";
+
 const NAV_ITEMS = [
   "Dashboard",
   "Raw Inbox",
@@ -22,6 +24,46 @@ export function App() {
   const [vaultMessage, setVaultMessage] = useState("No vault connected yet.");
   const [groqKey, setGroqKey] = useState("");
   const [providerState, setProviderState] = useState("Provider key has not been tested yet.");
+
+  function saveLastVaultPath(pathValue) {
+    try {
+      localStorage.setItem(LAST_VAULT_PATH_KEY, pathValue);
+    } catch {
+      // Ignore local storage write failures.
+    }
+  }
+
+  function loadLastVaultPath() {
+    try {
+      return localStorage.getItem(LAST_VAULT_PATH_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  function clearLastVaultPath() {
+    try {
+      localStorage.removeItem(LAST_VAULT_PATH_KEY);
+    } catch {
+      // Ignore local storage delete failures.
+    }
+  }
+
+  async function restoreVault(pathValue) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !pathValue) return;
+    const selected = await desktopApi.selectVault(pathValue);
+    if (!selected.ok || !selected.payload) {
+      clearLastVaultPath();
+      setVaultPath("");
+      setVaultMessage("Previously selected vault is no longer available. Please select again.");
+      return;
+    }
+    setVaultPath(selected.payload.vault_path);
+    await refreshVaultStatus(selected.payload.vault_path);
+    const warning = selected.payload.warning ? ` Warning: ${selected.payload.warning}` : "";
+    setVaultMessage(`Restored previous vault.${warning}`);
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -48,6 +90,10 @@ export function App() {
     }
 
     loadHealth();
+    const lastVaultPath = loadLastVaultPath();
+    if (lastVaultPath) {
+      restoreVault(lastVaultPath);
+    }
     const timer = setInterval(loadHealth, 5000);
     desktopApi.onBackendExited(() => {
       if (mounted) {
@@ -104,6 +150,7 @@ export function App() {
       gitDetected: configured.payload.git_detected,
       obsidianCliAvailable: configured.payload.obsidian_cli_available
     });
+    saveLastVaultPath(configured.payload.vault_path);
     const warning = configured.payload.warning ? ` Warning: ${configured.payload.warning}` : "";
     setVaultMessage(`Vault connected and initialized.${warning}`);
   }
