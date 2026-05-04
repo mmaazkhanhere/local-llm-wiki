@@ -8,7 +8,8 @@ declare global {
         payload?: { status: string; version: string; timestamp: string };
         message?: string;
       }>;
-      pickVaultFolder: () => Promise<{ canceled: boolean; path: string | null }>;
+      pickVaultFolder: () => Promise<{ canceled: boolean; path: string | null; error?: string }>;
+      openVaultPicker?: () => Promise<{ canceled: boolean; path: string | null; error?: string }>;
       selectVault: (path: string) => Promise<{
         ok: boolean;
         payload?: {

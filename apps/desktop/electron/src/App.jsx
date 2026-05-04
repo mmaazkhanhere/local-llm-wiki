@@ -74,15 +74,13 @@ export function App() {
     }
   }
 
-  async function connectVault() {
+  async function initializeVault(pathValue) {
     const desktopApi = window.desktopApi;
-    if (!desktopApi) return;
-    const picked = await desktopApi.pickVaultFolder();
-    if (picked.canceled || !picked.path) {
+    if (!desktopApi) {
+      setVaultMessage("Desktop bridge not found. Open this in Electron.");
       return;
     }
-
-    const selected = await desktopApi.selectVault(picked.path);
+    const selected = await desktopApi.selectVault(pathValue);
     if (!selected.ok || !selected.payload) {
       setVaultMessage(`Vault selection failed: ${selected.error ?? "Unknown error"}`);
       return;
@@ -108,6 +106,33 @@ export function App() {
     });
     const warning = configured.payload.warning ? ` Warning: ${configured.payload.warning}` : "";
     setVaultMessage(`Vault connected and initialized.${warning}`);
+  }
+
+  async function connectVault() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi) {
+      setVaultMessage("Desktop bridge not found. Open this in Electron.");
+      return;
+    }
+    try {
+      const pickFolder = desktopApi.pickVaultFolder ?? desktopApi.openVaultPicker;
+      if (!pickFolder) {
+        setVaultMessage("Vault picker bridge missing. Restart Electron so preload updates are applied.");
+        return;
+      }
+      const picked = await pickFolder();
+      if (picked.error) {
+        setVaultMessage(`Vault picker failed: ${picked.error}`);
+        return;
+      }
+      if (picked.canceled || !picked.path) {
+        setVaultMessage("Vault selection canceled.");
+        return;
+      }
+      await initializeVault(picked.path);
+    } catch (error) {
+      setVaultMessage(`Vault picker failed: ${String(error)}`);
+    }
   }
 
   async function testGroqConnection() {

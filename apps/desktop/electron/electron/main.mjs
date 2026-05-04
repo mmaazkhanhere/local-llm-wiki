@@ -121,15 +121,19 @@ ipcMain.handle("backend-health", async () => {
 
 ipcMain.handle("vault-pick-folder", async () => {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    return { canceled: true, path: null };
+    return { canceled: true, path: null, error: "Main window is not available." };
   }
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openDirectory"]
-  });
-  if (result.canceled || result.filePaths.length === 0) {
-    return { canceled: true, path: null };
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openDirectory"]
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true, path: null };
+    }
+    return { canceled: false, path: result.filePaths[0] };
+  } catch (error) {
+    return { canceled: true, path: null, error: String(error) };
   }
-  return { canceled: false, path: result.filePaths[0] };
 });
 
 async function backendPost(route, body, query = "") {
