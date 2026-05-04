@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 from llm_wiki_backend.core.errors import VaultValidationError
@@ -57,4 +58,17 @@ def detect_git(vault_path: Path) -> bool:
 
 
 def detect_obsidian_cli() -> bool:
-    return shutil.which("obsidian") is not None
+    command = shutil.which("obsidian")
+    if command is None:
+        return False
+    try:
+        completed = subprocess.run(
+            [command, "help"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0

@@ -18,4 +18,4 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--basetemp .pytest-tmp -p no:cacheprovider"
+addopts = "-p no:cacheprovider"

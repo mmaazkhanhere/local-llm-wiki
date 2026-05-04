@@ -13,6 +13,15 @@ const NAV_ITEMS = [
 export function App() {
   const [activeView, setActiveView] = useState("Dashboard");
   const [health, setHealth] = useState({ online: false, message: "Checking backend..." });
+  const [vaultPath, setVaultPath] = useState("");
+  const [status, setStatus] = useState({
+    hasObsidian: false,
+    gitDetected: false,
+    obsidianCliAvailable: false
+  });
+  const [vaultMessage, setVaultMessage] = useState("No vault connected yet.");
+  const [groqKey, setGroqKey] = useState("");
+  const [providerState, setProviderState] = useState("Provider key has not been tested yet.");
 
   useEffect(() => {
     let mounted = true;
@@ -52,6 +61,80 @@ export function App() {
     };
   }, []);
 
+  async function refreshVaultStatus(pathValue) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi) return;
+    const statusResult = await desktopApi.vaultStatus(pathValue);
+    if (statusResult.ok && statusResult.payload) {
+      setStatus({
+        hasObsidian: statusResult.payload.has_obsidian,
+        gitDetected: statusResult.payload.git_detected,
+        obsidianCliAvailable: statusResult.payload.obsidian_cli_available
+      });
+    }
+  }
+
+  async function connectVault() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi) return;
+    const picked = await desktopApi.pickVaultFolder();
+    if (picked.canceled || !picked.path) {
+      return;
+    }
+
+    const selected = await desktopApi.selectVault(picked.path);
+    if (!selected.ok || !selected.payload) {
+      setVaultMessage(`Vault selection failed: ${selected.error ?? "Unknown error"}`);
+      return;
+    }
+
+    setVaultPath(selected.payload.vault_path);
+    const bootstrap = await desktopApi.bootstrapVault(selected.payload.vault_path);
+    if (!bootstrap.ok) {
+      setVaultMessage(`Vault bootstrap failed: ${bootstrap.error ?? "Unknown error"}`);
+      return;
+    }
+
+    const configured = await desktopApi.configureVault(selected.payload.vault_path);
+    if (!configured.ok || !configured.payload) {
+      setVaultMessage(`Vault config failed: ${configured.error ?? "Unknown error"}`);
+      return;
+    }
+
+    setStatus({
+      hasObsidian: configured.payload.has_obsidian,
+      gitDetected: configured.payload.git_detected,
+      obsidianCliAvailable: configured.payload.obsidian_cli_available
+    });
+    const warning = configured.payload.warning ? ` Warning: ${configured.payload.warning}` : "";
+    setVaultMessage(`Vault connected and initialized.${warning}`);
+  }
+
+  async function testGroqConnection() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath) {
+      setProviderState("Select and initialize a vault first.");
+      return;
+    }
+    if (!groqKey.trim()) {
+      setProviderState("Enter a Groq API key first.");
+      return;
+    }
+    const result = await desktopApi.testGroqKey(vaultPath, groqKey.trim());
+    if (!result.ok || !result.payload) {
+      setProviderState(`Connection test failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    if (result.payload.connected) {
+      setProviderState(`Connected: ${result.payload.message}`);
+    } else {
+      setProviderState(`Not connected: ${result.payload.message}`);
+    }
+  }
+
+  const isDashboard = activeView === "Dashboard";
+  const isSettings = activeView === "Settings";
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -82,9 +165,51 @@ export function App() {
 
         <section className="panel">
           <h2>{activeView}</h2>
-          <p>
-            This is the Phase 0 UI shell placeholder for <strong>{activeView}</strong>.
-          </p>
+          {isDashboard && (
+            <div className="stack">
+              <button type="button" className="action-btn" onClick={connectVault}>
+                Select Obsidian Vault
+              </button>
+              <p><strong>Selected vault:</strong> {vaultPath || "None"}</p>
+              <p>{vaultMessage}</p>
+              <p><strong>.obsidian:</strong> {status.hasObsidian ? "Found" : "Not found (warning only)"}</p>
+              <p><strong>Git:</strong> {status.gitDetected ? "Enabled" : "Not enabled"}</p>
+              <p>
+                <strong>Obsidian CLI:</strong> {status.obsidianCliAvailable ? "Available" : "Unavailable"}.
+                Core functionality works without it.
+              </p>
+            </div>
+          )}
+          {isSettings && (
+            <div className="stack">
+              <p><strong>Selected vault:</strong> {vaultPath || "None"}</p>
+              <button type="button" className="action-btn" onClick={connectVault}>
+                Change Vault
+              </button>
+              <label htmlFor="groq-key">Groq API Key</label>
+              <input
+                id="groq-key"
+                type="password"
+                value={groqKey}
+                onChange={(event) => setGroqKey(event.target.value)}
+                placeholder="gsk_..."
+              />
+              <div className="row">
+                <button type="button" className="action-btn" onClick={testGroqConnection}>
+                  Test Connection
+                </button>
+                <button type="button" className="nav-btn" onClick={() => refreshVaultStatus(vaultPath)}>
+                  Refresh Status
+                </button>
+              </div>
+              <p>{providerState}</p>
+            </div>
+          )}
+          {!isDashboard && !isSettings && (
+            <p>
+              This is the Phase 0 UI shell placeholder for <strong>{activeView}</strong>.
+            </p>
+          )}
         </section>
       </main>
     </div>

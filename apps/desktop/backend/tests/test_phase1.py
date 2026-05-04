@@ -3,9 +3,14 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
+from llm_wiki_backend.core.config import load_config, save_config
+from llm_wiki_backend.core.errors import ConfigError
+from llm_wiki_backend.core.models import AppConfig
 from llm_wiki_backend.main import app
+from llm_wiki_backend.vault.service import detect_obsidian_cli
 
 client = TestClient(app)
 
@@ -58,6 +63,20 @@ def test_bootstrap_is_idempotent_for_existing_files(tmp_path: Path) -> None:
     second = client.post("/vault/bootstrap", json={"path": str(tmp_path)})
     assert second.status_code == 200
     assert index_path.read_text(encoding="utf-8") == original
+
+
+def test_bootstrap_does_not_modify_unrelated_files(tmp_path: Path) -> None:
+    notes = tmp_path / "Personal"
+    notes.mkdir()
+    untouched = notes / "note.md"
+    untouched.write_text("do not change", encoding="utf-8")
+    before = untouched.read_text(encoding="utf-8")
+
+    response = client.post("/vault/bootstrap", json={"path": str(tmp_path)})
+    assert response.status_code == 200
+
+    after = untouched.read_text(encoding="utf-8")
+    assert after == before
 
 
 def test_database_contains_required_tables(tmp_path: Path) -> None:
@@ -119,3 +138,32 @@ def test_provider_test_failure_does_not_store_secret(tmp_path: Path, monkeypatch
     assert response.status_code == 200
     assert response.json()["connected"] is False
     assert not (tmp_path / ".llm-wiki/secrets.enc.json").exists()
+
+
+def test_config_roundtrip_read_write(tmp_path: Path) -> None:
+    config = AppConfig(vault_path=str(tmp_path))
+    save_config(config, tmp_path)
+    loaded = load_config(tmp_path)
+    assert loaded is not None
+    assert loaded.vault_path == str(tmp_path)
+
+
+def test_config_invalid_json_raises_error(tmp_path: Path) -> None:
+    config_dir = tmp_path / ".llm-wiki"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.json").write_text("{invalid", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)
+
+
+def test_config_invalid_schema_raises_error(tmp_path: Path) -> None:
+    config_dir = tmp_path / ".llm-wiki"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.json").write_text('{"provider": {"provider": "groq"}}', encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)
+
+
+def test_detect_obsidian_cli_when_not_installed(monkeypatch) -> None:
+    monkeypatch.setattr("llm_wiki_backend.vault.service.shutil.which", lambda _: None)
+    assert detect_obsidian_cli() is False

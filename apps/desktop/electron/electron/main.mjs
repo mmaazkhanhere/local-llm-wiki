@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -118,6 +118,55 @@ ipcMain.handle("backend-health", async () => {
     return { online: false, message: String(error) };
   }
 });
+
+ipcMain.handle("vault-pick-folder", async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { canceled: true, path: null };
+  }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"]
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, path: null };
+  }
+  return { canceled: false, path: result.filePaths[0] };
+});
+
+async function backendPost(route, body, query = "") {
+  const response = await fetch(`${backendUrl}${route}${query}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    return { ok: false, status: response.status, error: payload?.detail ?? "Request failed" };
+  }
+  return { ok: true, payload };
+}
+
+async function backendGet(route, query = "") {
+  const response = await fetch(`${backendUrl}${route}${query}`, { method: "GET" });
+  const payload = await response.json();
+  if (!response.ok) {
+    return { ok: false, status: response.status, error: payload?.detail ?? "Request failed" };
+  }
+  return { ok: true, payload };
+}
+
+ipcMain.handle("vault-select", async (_, pathValue) => backendPost("/vault/select", { path: pathValue }));
+
+ipcMain.handle("vault-bootstrap", async (_, pathValue) => backendPost("/vault/bootstrap", { path: pathValue }));
+
+ipcMain.handle("vault-configure", async (_, pathValue) => backendPost("/vault/configure", { path: pathValue }));
+
+ipcMain.handle("vault-status", async (_, pathValue) =>
+  backendGet("/vault/status", `?vault_path=${encodeURIComponent(pathValue)}`)
+);
+
+ipcMain.handle("provider-groq-test", async (_, vaultPath, apiKey) =>
+  backendPost("/provider/groq/test", { api_key: apiKey }, `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
 
 app.whenReady().then(async () => {
   startBackend();
