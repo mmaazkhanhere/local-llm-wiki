@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, "..", "..", "..");
+const projectRoot = path.resolve(__dirname, "..", "..", "..", "..");
 const backendDir = path.join(projectRoot, "apps", "desktop", "backend");
 const backendPort = 8765;
 const backendUrl = `http://127.0.0.1:${backendPort}`;
@@ -13,6 +13,7 @@ const isDev = !app.isPackaged;
 
 let mainWindow = null;
 let backendProcess = null;
+let stoppingBackend = false;
 
 function startBackend() {
   if (backendProcess) {
@@ -53,11 +54,31 @@ function startBackend() {
 }
 
 function stopBackend() {
-  if (!backendProcess) {
+  if (!backendProcess || stoppingBackend) {
     return;
   }
+  stoppingBackend = true;
+  const pid = backendProcess.pid;
+  if (process.platform === "win32" && pid) {
+    const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      windowsHide: true,
+      stdio: "ignore"
+    });
+    killer.on("exit", () => {
+      backendProcess = null;
+      stoppingBackend = false;
+    });
+    killer.on("error", () => {
+      backendProcess?.kill();
+      backendProcess = null;
+      stoppingBackend = false;
+    });
+    return;
+  }
+
   backendProcess.kill();
   backendProcess = null;
+  stoppingBackend = false;
 }
 
 async function createWindow() {
@@ -68,7 +89,8 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: false
     }
   });
 
@@ -116,5 +138,19 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  stopBackend();
+});
+
+process.on("SIGINT", () => {
+  stopBackend();
+  app.quit();
+});
+
+process.on("SIGTERM", () => {
+  stopBackend();
+  app.quit();
+});
+
+process.on("exit", () => {
   stopBackend();
 });
