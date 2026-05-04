@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("desktopApi", {
   configureVault: (path) => ipcRenderer.invoke("vault-configure", path),
   vaultStatus: (path) => ipcRenderer.invoke("vault-status", path),
   testGroqKey: (vaultPath, apiKey) => ipcRenderer.invoke("provider-groq-test", vaultPath, apiKey),
+  groqStatus: (vaultPath) => ipcRenderer.invoke("provider-groq-status", vaultPath),
   onBackendExited: (listener) => {
     ipcRenderer.on("backend-exited", (_, payload) => listener(payload));
   }

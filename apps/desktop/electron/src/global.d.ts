@@ -48,6 +48,20 @@ declare global {
         payload?: { provider: string; connected: boolean; message: string };
         error?: string;
       }>;
+      groqStatus: (vaultPath: string) => Promise<{
+        ok: boolean;
+        payload?: {
+          provider: string;
+          configured: boolean;
+          connected: boolean;
+          message: string;
+          default_text_model: string;
+          cheap_fast_model: string;
+          review_model: string;
+          vision_model: string | null;
+        };
+        error?: string;
+      }>;
       onBackendExited: (listener: (payload: { code: number | null }) => void) => void;
     };
   }

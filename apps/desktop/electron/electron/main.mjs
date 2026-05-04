@@ -137,25 +137,33 @@ ipcMain.handle("vault-pick-folder", async () => {
 });
 
 async function backendPost(route, body, query = "") {
-  const response = await fetch(`${backendUrl}${route}${query}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    return { ok: false, status: response.status, error: payload?.detail ?? "Request failed" };
+  try {
+    const response = await fetch(`${backendUrl}${route}${query}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      return { ok: false, status: response.status, error: payload?.detail ?? "Request failed" };
+    }
+    return { ok: true, payload };
+  } catch (error) {
+    return { ok: false, status: 503, error: `Backend unavailable: ${String(error)}` };
   }
-  return { ok: true, payload };
 }
 
 async function backendGet(route, query = "") {
-  const response = await fetch(`${backendUrl}${route}${query}`, { method: "GET" });
-  const payload = await response.json();
-  if (!response.ok) {
-    return { ok: false, status: response.status, error: payload?.detail ?? "Request failed" };
+  try {
+    const response = await fetch(`${backendUrl}${route}${query}`, { method: "GET" });
+    const payload = await response.json();
+    if (!response.ok) {
+      return { ok: false, status: response.status, error: payload?.detail ?? "Request failed" };
+    }
+    return { ok: true, payload };
+  } catch (error) {
+    return { ok: false, status: 503, error: `Backend unavailable: ${String(error)}` };
   }
-  return { ok: true, payload };
 }
 
 ipcMain.handle("vault-select", async (_, pathValue) => backendPost("/vault/select", { path: pathValue }));
@@ -170,6 +178,10 @@ ipcMain.handle("vault-status", async (_, pathValue) =>
 
 ipcMain.handle("provider-groq-test", async (_, vaultPath, apiKey) =>
   backendPost("/provider/groq/test", { api_key: apiKey }, `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
+
+ipcMain.handle("provider-groq-status", async (_, vaultPath) =>
+  backendGet("/provider/groq/status", `?vault_path=${encodeURIComponent(vaultPath)}`)
 );
 
 app.whenReady().then(async () => {

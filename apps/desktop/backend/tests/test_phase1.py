@@ -176,6 +176,27 @@ def test_provider_test_failure_does_not_store_secret(vault_path: Path, monkeypat
     assert not (vault_path / ".llm-wiki/secrets.enc.json").exists()
 
 
+def test_provider_status_not_configured_by_default(vault_path: Path) -> None:
+    response = client.get("/provider/groq/status", params={"vault_path": str(vault_path)})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "groq"
+    assert body["configured"] is False
+    assert body["connected"] is False
+    assert body["default_text_model"] == "openai/gpt-oss-120b"
+
+
+def test_provider_status_configured_when_fallback_secret_exists(vault_path: Path) -> None:
+    secrets_dir = vault_path / ".llm-wiki"
+    secrets_dir.mkdir(parents=True, exist_ok=True)
+    (secrets_dir / "secrets.enc.json").write_text('{"groq_api_key":"dGVzdA=="}', encoding="utf-8")
+    response = client.get("/provider/groq/status", params={"vault_path": str(vault_path)})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configured"] is True
+    assert body["connected"] is True
+
+
 def test_config_roundtrip_read_write(vault_path: Path) -> None:
     config = AppConfig(vault_path=str(vault_path))
     save_config(config, vault_path)
@@ -212,4 +233,3 @@ def test_bootstrap_handles_invalid_existing_config_safely(vault_path: Path) -> N
     (config_dir / "config.json").write_text("{invalid", encoding="utf-8")
     response = client.post("/vault/bootstrap", json={"path": str(vault_path)})
     assert response.status_code == 200
-

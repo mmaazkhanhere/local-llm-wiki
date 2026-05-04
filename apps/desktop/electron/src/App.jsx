@@ -24,6 +24,12 @@ export function App() {
   const [vaultMessage, setVaultMessage] = useState("No vault connected yet.");
   const [groqKey, setGroqKey] = useState("");
   const [providerState, setProviderState] = useState("Provider key has not been tested yet.");
+  const [groqStatus, setGroqStatus] = useState({
+    configured: false,
+    connected: false,
+    message: "Not configured.",
+    model: "openai/gpt-oss-120b"
+  });
 
   function saveLastVaultPath(pathValue) {
     try {
@@ -61,6 +67,7 @@ export function App() {
     }
     setVaultPath(selected.payload.vault_path);
     await refreshVaultStatus(selected.payload.vault_path);
+    await refreshGroqStatus(selected.payload.vault_path);
     const warning = selected.payload.warning ? ` Warning: ${selected.payload.warning}` : "";
     setVaultMessage(`Restored previous vault.${warning}`);
   }
@@ -94,7 +101,7 @@ export function App() {
     if (lastVaultPath) {
       restoreVault(lastVaultPath);
     }
-    const timer = setInterval(loadHealth, 5000);
+    const timer = setInterval(loadHealth, 60000);
     desktopApi.onBackendExited(() => {
       if (mounted) {
         setHealth({ online: false, message: "Offline (backend process exited)" });
@@ -120,39 +127,70 @@ export function App() {
     }
   }
 
+  async function refreshGroqStatus(pathValue) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !pathValue) return;
+    const statusResult = await desktopApi.groqStatus(pathValue);
+    if (!statusResult.ok || !statusResult.payload) {
+      setGroqStatus({
+        configured: false,
+        connected: false,
+        message: statusResult.error ?? "Unable to read Groq status.",
+        model: "openai/gpt-oss-120b"
+      });
+      return;
+    }
+    setGroqStatus({
+      configured: statusResult.payload.configured,
+      connected: statusResult.payload.connected,
+      message: statusResult.payload.message,
+      model: statusResult.payload.default_text_model
+    });
+    if (statusResult.payload.connected) {
+      setProviderState(`Connected: ${statusResult.payload.message}`);
+    } else {
+      setProviderState("Provider key has not been tested yet.");
+    }
+  }
+
   async function initializeVault(pathValue) {
     const desktopApi = window.desktopApi;
     if (!desktopApi) {
       setVaultMessage("Desktop bridge not found. Open this in Electron.");
       return;
     }
-    const selected = await desktopApi.selectVault(pathValue);
-    if (!selected.ok || !selected.payload) {
-      setVaultMessage(`Vault selection failed: ${selected.error ?? "Unknown error"}`);
-      return;
-    }
+    try {
+      const selected = await desktopApi.selectVault(pathValue);
+      if (!selected.ok || !selected.payload) {
+        setVaultMessage(`Vault selection failed: ${selected.error ?? "Unknown error"}`);
+        return;
+      }
 
-    setVaultPath(selected.payload.vault_path);
-    const bootstrap = await desktopApi.bootstrapVault(selected.payload.vault_path);
-    if (!bootstrap.ok) {
-      setVaultMessage(`Vault bootstrap failed: ${bootstrap.error ?? "Unknown error"}`);
-      return;
-    }
+      setVaultPath(selected.payload.vault_path);
+      const bootstrap = await desktopApi.bootstrapVault(selected.payload.vault_path);
+      if (!bootstrap.ok) {
+        setVaultMessage(`Vault bootstrap failed: ${bootstrap.error ?? "Unknown error"}`);
+        return;
+      }
 
-    const configured = await desktopApi.configureVault(selected.payload.vault_path);
-    if (!configured.ok || !configured.payload) {
-      setVaultMessage(`Vault config failed: ${configured.error ?? "Unknown error"}`);
-      return;
-    }
+      const configured = await desktopApi.configureVault(selected.payload.vault_path);
+      if (!configured.ok || !configured.payload) {
+        setVaultMessage(`Vault config failed: ${configured.error ?? "Unknown error"}`);
+        return;
+      }
 
-    setStatus({
-      hasObsidian: configured.payload.has_obsidian,
-      gitDetected: configured.payload.git_detected,
-      obsidianCliAvailable: configured.payload.obsidian_cli_available
-    });
-    saveLastVaultPath(configured.payload.vault_path);
-    const warning = configured.payload.warning ? ` Warning: ${configured.payload.warning}` : "";
-    setVaultMessage(`Vault connected and initialized.${warning}`);
+      setStatus({
+        hasObsidian: configured.payload.has_obsidian,
+        gitDetected: configured.payload.git_detected,
+        obsidianCliAvailable: configured.payload.obsidian_cli_available
+      });
+      await refreshGroqStatus(configured.payload.vault_path);
+      saveLastVaultPath(configured.payload.vault_path);
+      const warning = configured.payload.warning ? ` Warning: ${configured.payload.warning}` : "";
+      setVaultMessage(`Vault connected and initialized.${warning}`);
+    } catch (error) {
+      setVaultMessage(`Backend request failed: ${String(error)}`);
+    }
   }
 
   async function connectVault() {
@@ -178,7 +216,7 @@ export function App() {
       }
       await initializeVault(picked.path);
     } catch (error) {
-      setVaultMessage(`Vault picker failed: ${String(error)}`);
+      setVaultMessage(`Vault selection failed: ${String(error)}`);
     }
   }
 
@@ -199,6 +237,7 @@ export function App() {
     }
     if (result.payload.connected) {
       setProviderState(`Connected: ${result.payload.message}`);
+      await refreshGroqStatus(vaultPath);
     } else {
       setProviderState(`Not connected: ${result.payload.message}`);
     }
@@ -247,6 +286,14 @@ export function App() {
               <p><strong>.obsidian:</strong> {status.hasObsidian ? "Found" : "Not found (warning only)"}</p>
               <p><strong>Git:</strong> {status.gitDetected ? "Enabled" : "Not enabled"}</p>
               <p>
+                <strong>Groq:</strong>{" "}
+                <span className={groqStatus.connected ? "ok" : "error"}>
+                  {groqStatus.connected ? "Connected" : "Not connected"}
+                </span>{" "}
+                ({groqStatus.message})
+              </p>
+              <p><strong>Groq model:</strong> {groqStatus.model}</p>
+              <p>
                 <strong>Obsidian CLI:</strong> {status.obsidianCliAvailable ? "Available" : "Unavailable"}.
                 Core functionality works without it.
               </p>
@@ -273,7 +320,17 @@ export function App() {
                 <button type="button" className="nav-btn" onClick={() => refreshVaultStatus(vaultPath)}>
                   Refresh Status
                 </button>
+                <button type="button" className="nav-btn" onClick={() => refreshGroqStatus(vaultPath)}>
+                  Refresh Groq
+                </button>
               </div>
+              <p>
+                Saved Groq key:{" "}
+                <strong>{groqStatus.configured ? "Configured" : "Not configured"}</strong>
+              </p>
+              <p>
+                Default Groq model: <strong>{groqStatus.model}</strong>
+              </p>
               <p>{providerState}</p>
             </div>
           )}
