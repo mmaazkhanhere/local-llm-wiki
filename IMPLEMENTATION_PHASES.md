@@ -269,7 +269,9 @@ Scan existing files in `Raw/`.
 ### Complete when
 * App discovers files under `Raw/`.
 * App ignores `Wiki/`, `.llm-wiki/`, `.obsidian/`, `.git/`, `.trash/`.
+* Scan only reads files and never modifies anything under `Raw/`.
 * App shows discovered files in Raw Inbox.
+* Scan results are persisted so later hashing/extraction work uses the same discovered file set.
 * Tests verify ignored paths.
 
 ---
@@ -281,6 +283,8 @@ Compute SHA-256 hashes.
 * Every discovered file gets a hash.
 * Unchanged files are not reprocessed.
 * Changed files are detected.
+* Reprocessing decisions are based on stored hashes, not file names or timestamps alone.
+* Hashing does not modify source files.
 * Hashing is tested.
 
 ---
@@ -295,7 +299,10 @@ Watch for new and changed files.
 * Changed files are queued for reprocessing.
 * App waits briefly for file writes to stabilize.
 * App does not process generated wiki files.
+* Watcher applies the same protected-folder exclusions as the initial scan.
+* Watcher only schedules read/ingest work and never writes into `Raw/`.
 * Watcher can be started/stopped cleanly.
+* Tests cover create/change events, stabilization delay, and protected-folder exclusions.
 
 ---
 
@@ -312,7 +319,8 @@ Support:
 * Markdown and text files are extracted.
 * Basic headings are detected.
 * Extracted content is stored in SQLite.
-* Chunks are stored in FTS5.
+* Extracted chunks are stored in SQLite FTS5 with source file references.
+* Raw source files are not modified during extraction or chunking.
 * Tests use fixture files.
 
 ---
@@ -329,6 +337,8 @@ Support:
 * Page numbers are preserved where possible.
 * Empty/scanned PDFs are marked as extraction-limited.
 * Extraction errors are shown in Raw Inbox.
+* Extracted text and chunks are stored in SQLite FTS5 with page-aware source references when available.
+* Raw PDF files are not modified during extraction.
 * Tests use a sample PDF.
 
 ---
@@ -345,7 +355,8 @@ Support:
 * Paragraphs are extracted.
 * Headings are preserved where possible.
 * Tables are handled reasonably.
-* Chunks are stored with source references.
+* Chunks are stored in SQLite FTS5 with source references.
+* Raw DOCX files are not modified during extraction.
 * Tests use a sample DOCX.
 
 ---
@@ -362,7 +373,8 @@ Support:
 
 * Title and readable body are extracted.
 * Script/style/navigation noise is minimized.
-* Chunks are stored in FTS5.
+* Chunks are stored in SQLite FTS5 with source references.
+* Raw HTML files are not modified during extraction.
 * Tests use a sample HTML file.
 
 ---
@@ -382,8 +394,9 @@ Support common learning/code files:
 .go
 .rs
 .json
-yaml/yml
-csv
+.yaml
+.yml
+.csv
 ```
 
 ### Complete when
@@ -391,6 +404,8 @@ csv
 * Files are treated as learning material when placed in `Raw/`.
 * Line references are preserved.
 * Large files are chunked safely.
+* Extracted chunks are stored in SQLite FTS5 with source references.
+* Raw source files are not modified during extraction or chunking.
 * Tests use small fixture files.
 
 ---
@@ -412,6 +427,8 @@ Support detection for:
 * Status is `pending_image`.
 * Images are not sent to Groq.
 * UI explains image processing is not enabled yet.
+* Image files are not chunked or inserted into text-extraction tables.
+* Tests verify `pending_image` status and no text extraction side effects.
 
 ---
 

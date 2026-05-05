@@ -184,6 +184,22 @@ ipcMain.handle("provider-groq-status", async (_, vaultPath) =>
   backendGet("/provider/groq/status", `?vault_path=${encodeURIComponent(vaultPath)}`)
 );
 
+ipcMain.handle("raw-ingest-run", async (_, vaultPath) =>
+  backendPost("/ingest/raw/run", {}, `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
+
+ipcMain.handle("raw-inbox", async (_, vaultPath) =>
+  backendGet("/ingest/raw/inbox", `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
+
+ipcMain.handle("raw-watch-start", async (_, vaultPath) =>
+  backendPost("/ingest/raw/watch/start", {}, `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
+
+ipcMain.handle("raw-watch-stop", async () => backendPost("/ingest/raw/watch/stop", {}));
+
+ipcMain.handle("raw-watch-status", async () => backendGet("/ingest/raw/watch/status"));
+
 app.whenReady().then(async () => {
   startBackend();
   await createWindow();

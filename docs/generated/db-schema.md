@@ -1,8 +1,8 @@
-# Database Schema
+﻿# Database Schema
 
-This file documents the intended MVP schema and should be updated when the implementation materially changes it.
+This file mirrors the backend SQLite schema in `apps/desktop/backend/llm_wiki_backend/db/service.py`.
 
-## MVP Tables
+## Tables
 
 ### `vaults`
 
@@ -35,10 +35,10 @@ CREATE TABLE files (
 );
 ```
 
-### `source_documents`
+### `extractions`
 
 ```sql
-CREATE TABLE source_documents (
+CREATE TABLE extractions (
   id TEXT PRIMARY KEY,
   file_id TEXT NOT NULL,
   title TEXT,
@@ -54,7 +54,7 @@ CREATE TABLE source_documents (
 ```sql
 CREATE TABLE chunks (
   id TEXT PRIMARY KEY,
-  source_document_id TEXT NOT NULL,
+  extraction_id TEXT NOT NULL,
   chunk_index INTEGER NOT NULL,
   text TEXT NOT NULL,
   token_count INTEGER,
@@ -64,12 +64,28 @@ CREATE TABLE chunks (
 );
 ```
 
-### `generated_pages`
+### `chunks_fts` (FTS5)
 
 ```sql
-CREATE TABLE generated_pages (
+CREATE VIRTUAL TABLE chunks_fts USING fts5(
+  chunk_id UNINDEXED,
+  extraction_id UNINDEXED,
+  file_id UNINDEXED,
+  relative_path UNINDEXED,
+  text,
+  heading,
+  page_number UNINDEXED,
+  line_start UNINDEXED,
+  line_end UNINDEXED
+);
+```
+
+### `wiki_pages`
+
+```sql
+CREATE TABLE wiki_pages (
   id TEXT PRIMARY KEY,
-  source_document_id TEXT,
+  extraction_id TEXT,
   page_type TEXT NOT NULL,
   path TEXT NOT NULL,
   relative_path TEXT NOT NULL,
@@ -80,10 +96,24 @@ CREATE TABLE generated_pages (
 );
 ```
 
-### `audit_log`
+### `proposed_updates`
 
 ```sql
-CREATE TABLE audit_log (
+CREATE TABLE proposed_updates (
+  id TEXT PRIMARY KEY,
+  wiki_page_id TEXT NOT NULL,
+  old_content TEXT NOT NULL,
+  proposed_content TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT
+);
+```
+
+### `audit_events`
+
+```sql
+CREATE TABLE audit_events (
   id TEXT PRIMARY KEY,
   event_type TEXT NOT NULL,
   target_path TEXT,
@@ -94,20 +124,50 @@ CREATE TABLE audit_log (
 );
 ```
 
-## Deferred Tables
+### `flashcards`
 
-- `qa_history`
-- `flashcards`
-- `active_recall_questions`
+```sql
+CREATE TABLE flashcards (
+  id TEXT PRIMARY KEY,
+  extraction_id TEXT NOT NULL,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+```
 
-## Status Conventions
+### `review_items`
 
-Recommended `files.processing_status` values:
+```sql
+CREATE TABLE review_items (
+  id TEXT PRIMARY KEY,
+  extraction_id TEXT,
+  title TEXT NOT NULL,
+  issue TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT
+);
+```
+
+## Indexes
+
+```sql
+CREATE INDEX idx_files_vault_relative_path ON files(vault_id, relative_path);
+CREATE INDEX idx_files_status ON files(processing_status);
+CREATE INDEX idx_extractions_file ON extractions(file_id);
+CREATE INDEX idx_chunks_extraction ON chunks(extraction_id);
+```
+
+## `files.processing_status` values in use
 
 - `discovered`
 - `queued`
 - `processing`
-- `generated`
+- `processed`
 - `skipped_unchanged`
+- `pending_image`
+- `extraction_limited`
+- `unsupported`
 - `failed_transient`
 - `failed_permanent`

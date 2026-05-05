@@ -8,14 +8,26 @@ from llm_wiki_backend.core.models import (
     AppConfig,
     BootstrapResponse,
     ConfigureVaultResponse,
+    IngestFileResponse,
+    IngestSummaryResponse,
     ProviderTestRequest,
     ProviderTestResponse,
     ProviderStatusResponse,
+    RawInboxResponse,
     SelectVaultRequest,
     SelectVaultResponse,
     StatusResponse,
+    WatcherStatusResponse,
 )
 from llm_wiki_backend.db.service import initialize_database
+from llm_wiki_backend.ingestion.service import (
+    hash_discovered_files,
+    ingest_raw_files,
+    list_raw_inbox,
+    process_queued_files,
+    scan_raw_files,
+)
+from llm_wiki_backend.ingestion.watcher import RAW_WATCHER
 from llm_wiki_backend.llm.groq import test_groq_connection
 from llm_wiki_backend.security.secrets import save_groq_key
 from llm_wiki_backend.security.secrets import has_groq_key
@@ -133,3 +145,91 @@ def provider_status(vault_path: str) -> ProviderStatusResponse:
         review_model=config.provider.review_model,
         vision_model=config.provider.vision_model,
     )
+
+
+@router.post("/ingest/raw/scan", response_model=IngestSummaryResponse)
+def raw_scan(vault_path: str) -> IngestSummaryResponse:
+    try:
+        vault, _ = validate_vault(vault_path)
+    except VaultValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    summary = scan_raw_files(vault)
+    return IngestSummaryResponse(**summary.__dict__)
+
+
+@router.post("/ingest/raw/hash", response_model=IngestSummaryResponse)
+def raw_hash(vault_path: str) -> IngestSummaryResponse:
+    try:
+        vault, _ = validate_vault(vault_path)
+    except VaultValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    summary = hash_discovered_files(vault)
+    return IngestSummaryResponse(**summary.__dict__)
+
+
+@router.post("/ingest/raw/process", response_model=IngestSummaryResponse)
+def raw_process(vault_path: str) -> IngestSummaryResponse:
+    try:
+        vault, _ = validate_vault(vault_path)
+    except VaultValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    summary = process_queued_files(vault)
+    return IngestSummaryResponse(**summary.__dict__)
+
+
+@router.post("/ingest/raw/run", response_model=IngestSummaryResponse)
+def raw_run(vault_path: str) -> IngestSummaryResponse:
+    try:
+        vault, _ = validate_vault(vault_path)
+    except VaultValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    summary = ingest_raw_files(vault)
+    return IngestSummaryResponse(**summary.__dict__)
+
+
+@router.get("/ingest/raw/inbox", response_model=RawInboxResponse)
+def raw_inbox(vault_path: str) -> RawInboxResponse:
+    try:
+        vault, _ = validate_vault(vault_path)
+    except VaultValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    files = list_raw_inbox(vault)
+    return RawInboxResponse(
+        summary=IngestSummaryResponse(
+            discovered_count=len(files),
+            queued_count=sum(1 for item in files if item.processing_status == "queued"),
+            processed_count=sum(1 for item in files if item.processing_status == "processed"),
+            skipped_count=sum(1 for item in files if item.processing_status == "skipped_unchanged"),
+            failed_count=sum(1 for item in files if item.processing_status.startswith("failed")),
+            pending_image_count=sum(1 for item in files if item.processing_status == "pending_image"),
+        ),
+        files=[IngestFileResponse(**item.__dict__) for item in files],
+    )
+
+
+@router.post("/ingest/raw/watch/start", response_model=WatcherStatusResponse)
+def raw_watch_start(
+    vault_path: str,
+    poll_interval_seconds: float = 1.0,
+    stabilize_seconds: float = 0.8,
+) -> WatcherStatusResponse:
+    try:
+        vault, _ = validate_vault(vault_path)
+    except VaultValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    RAW_WATCHER.start(vault, poll_interval_seconds=poll_interval_seconds, stabilize_seconds=stabilize_seconds)
+    status = RAW_WATCHER.status()
+    return WatcherStatusResponse(**status.__dict__)
+
+
+@router.post("/ingest/raw/watch/stop", response_model=WatcherStatusResponse)
+def raw_watch_stop() -> WatcherStatusResponse:
+    RAW_WATCHER.stop()
+    status = RAW_WATCHER.status()
+    return WatcherStatusResponse(**status.__dict__)
+
+
+@router.get("/ingest/raw/watch/status", response_model=WatcherStatusResponse)
+def raw_watch_status() -> WatcherStatusResponse:
+    status = RAW_WATCHER.status()
+    return WatcherStatusResponse(**status.__dict__)

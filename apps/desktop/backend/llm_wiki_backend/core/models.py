@@ -83,3 +83,36 @@ class StatusResponse(BaseModel):
     has_obsidian: bool
     git_detected: bool
     obsidian_cli_available: bool
+
+
+class IngestFileResponse(BaseModel):
+    path: str
+    relative_path: str
+    file_type: str
+    size_bytes: int
+    modified_at: str
+    created_at: str
+    processing_status: str
+    error_message: str | None = None
+    sha256: str
+
+
+class IngestSummaryResponse(BaseModel):
+    discovered_count: int = 0
+    queued_count: int = 0
+    processed_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    pending_image_count: int = 0
+
+
+class RawInboxResponse(BaseModel):
+    summary: IngestSummaryResponse
+    files: list[IngestFileResponse]
+
+
+class WatcherStatusResponse(BaseModel):
+    running: bool
+    vault_path: str | None = None
+    poll_interval_seconds: float
+    stabilize_seconds: float
