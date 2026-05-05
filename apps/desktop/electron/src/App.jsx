@@ -30,6 +30,10 @@ export function App() {
     message: "Not configured.",
     model: "openai/gpt-oss-120b"
   });
+  const [rawInboxFiles, setRawInboxFiles] = useState([]);
+  const [rawInboxSummary, setRawInboxSummary] = useState(null);
+  const [rawMessage, setRawMessage] = useState("No scan has run yet.");
+  const [watchStatus, setWatchStatus] = useState({ running: false });
 
   function saveLastVaultPath(pathValue) {
     try {
@@ -68,6 +72,8 @@ export function App() {
     setVaultPath(selected.payload.vault_path);
     await refreshVaultStatus(selected.payload.vault_path);
     await refreshGroqStatus(selected.payload.vault_path);
+    await refreshRawInbox(selected.payload.vault_path);
+    await refreshWatchStatus();
     const warning = selected.payload.warning ? ` Warning: ${selected.payload.warning}` : "";
     setVaultMessage(`Restored previous vault.${warning}`);
   }
@@ -185,6 +191,8 @@ export function App() {
         obsidianCliAvailable: configured.payload.obsidian_cli_available
       });
       await refreshGroqStatus(configured.payload.vault_path);
+      await refreshRawInbox(configured.payload.vault_path);
+      await refreshWatchStatus();
       saveLastVaultPath(configured.payload.vault_path);
       const warning = configured.payload.warning ? ` Warning: ${configured.payload.warning}` : "";
       setVaultMessage(`Vault connected and initialized.${warning}`);
@@ -243,8 +251,71 @@ export function App() {
     }
   }
 
+  async function refreshRawInbox(pathValue) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !pathValue) return;
+    const result = await desktopApi.rawInbox(pathValue);
+    if (!result.ok || !result.payload) {
+      setRawMessage(`Raw Inbox unavailable: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setRawInboxFiles(result.payload.files ?? []);
+    setRawInboxSummary(result.payload.summary ?? null);
+  }
+
+  async function runRawIngest() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath) {
+      setRawMessage("Select and initialize a vault first.");
+      return;
+    }
+    setRawMessage("Running scan/hash/extract...");
+    const result = await desktopApi.runRawIngest(vaultPath);
+    if (!result.ok || !result.payload) {
+      setRawMessage(`Raw ingest failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setRawMessage(
+      `Ingest completed. processed=${result.payload.processed_count}, failed=${result.payload.failed_count}, pending_image=${result.payload.pending_image_count}`
+    );
+    await refreshRawInbox(vaultPath);
+  }
+
+  async function refreshWatchStatus() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi) return;
+    const result = await desktopApi.rawWatchStatus();
+    if (!result.ok || !result.payload) {
+      setWatchStatus({ running: false });
+      return;
+    }
+    setWatchStatus(result.payload);
+  }
+
+  async function toggleRawWatch() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath) {
+      setRawMessage("Select and initialize a vault first.");
+      return;
+    }
+    if (watchStatus.running) {
+      await desktopApi.stopRawWatch();
+      setRawMessage("Raw watcher stopped.");
+      await refreshWatchStatus();
+      return;
+    }
+    const result = await desktopApi.startRawWatch(vaultPath);
+    if (!result.ok) {
+      setRawMessage(`Failed to start watcher: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setRawMessage("Raw watcher started.");
+    await refreshWatchStatus();
+  }
+
   const isDashboard = activeView === "Dashboard";
   const isSettings = activeView === "Settings";
+  const isRawInbox = activeView === "Raw Inbox";
 
   return (
     <div className="app-shell">
@@ -334,7 +405,55 @@ export function App() {
               <p>{providerState}</p>
             </div>
           )}
-          {!isDashboard && !isSettings && (
+          {isRawInbox && (
+            <div className="stack">
+              <div className="row">
+                <button type="button" className="action-btn" onClick={runRawIngest}>
+                  Run Raw Ingest
+                </button>
+                <button type="button" className="nav-btn" onClick={() => refreshRawInbox(vaultPath)}>
+                  Refresh Inbox
+                </button>
+                <button type="button" className="nav-btn" onClick={toggleRawWatch}>
+                  {watchStatus.running ? "Stop Watcher" : "Start Watcher"}
+                </button>
+              </div>
+              <p><strong>Watcher:</strong> {watchStatus.running ? "Running" : "Stopped"}</p>
+              {rawInboxSummary && (
+                <p>
+                  <strong>Summary:</strong> files={rawInboxSummary.discovered_count}, queued={rawInboxSummary.queued_count}, processed={rawInboxSummary.processed_count}, failed={rawInboxSummary.failed_count}, pending_image={rawInboxSummary.pending_image_count}
+                </p>
+              )}
+              <p>{rawMessage}</p>
+              <div>
+                {rawInboxFiles.length === 0 && <p>No discovered files yet.</p>}
+                {rawInboxFiles.length > 0 && (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>File</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rawInboxFiles.map((file) => (
+                        <tr key={file.relative_path}>
+                          <td>{file.relative_path}</td>
+                          <td>{file.file_type}</td>
+                          <td>{file.processing_status}</td>
+                          <td>{file.error_message || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <p>Images are shown as <code>pending_image</code>. Image processing is not enabled yet.</p>
+            </div>
+          )}
+          {!isDashboard && !isSettings && !isRawInbox && (
             <p>
               This is the Phase 0 UI shell placeholder for <strong>{activeView}</strong>.
             </p>

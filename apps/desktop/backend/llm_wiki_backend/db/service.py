@@ -10,8 +10,16 @@ def initialize_database(vault_path: Path) -> Path:
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.executescript(_schema_sql())
+        conn.executescript(_phase2_schema_sql())
         conn.commit()
     return db_path
+
+
+def connect_database(vault_path: Path) -> sqlite3.Connection:
+    db_path = initialize_database(vault_path)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def _schema_sql() -> str:
@@ -100,5 +108,30 @@ def _schema_sql() -> str:
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
       resolved_at TEXT
+    );
+    """
+
+
+def _phase2_schema_sql() -> str:
+    return """
+    CREATE INDEX IF NOT EXISTS idx_files_vault_relative_path
+      ON files(vault_id, relative_path);
+    CREATE INDEX IF NOT EXISTS idx_files_status
+      ON files(processing_status);
+    CREATE INDEX IF NOT EXISTS idx_extractions_file
+      ON extractions(file_id);
+    CREATE INDEX IF NOT EXISTS idx_chunks_extraction
+      ON chunks(extraction_id);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+      chunk_id UNINDEXED,
+      extraction_id UNINDEXED,
+      file_id UNINDEXED,
+      relative_path UNINDEXED,
+      text,
+      heading,
+      page_number UNINDEXED,
+      line_start UNINDEXED,
+      line_end UNINDEXED
     );
     """

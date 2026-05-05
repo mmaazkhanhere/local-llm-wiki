@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld("desktopApi", {
   vaultStatus: (path) => ipcRenderer.invoke("vault-status", path),
   testGroqKey: (vaultPath, apiKey) => ipcRenderer.invoke("provider-groq-test", vaultPath, apiKey),
   groqStatus: (vaultPath) => ipcRenderer.invoke("provider-groq-status", vaultPath),
+  runRawIngest: (vaultPath) => ipcRenderer.invoke("raw-ingest-run", vaultPath),
+  rawInbox: (vaultPath) => ipcRenderer.invoke("raw-inbox", vaultPath),
+  startRawWatch: (vaultPath) => ipcRenderer.invoke("raw-watch-start", vaultPath),
+  stopRawWatch: () => ipcRenderer.invoke("raw-watch-stop"),
+  rawWatchStatus: () => ipcRenderer.invoke("raw-watch-status"),
   onBackendExited: (listener) => {
     ipcRenderer.on("backend-exited", (_, payload) => listener(payload));
   }

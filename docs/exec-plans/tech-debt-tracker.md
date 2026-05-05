@@ -34,6 +34,16 @@ Temporary mitigation: keep writes atomic where possible and surface repair-neede
 Exit criteria: add deterministic repair flows for index, audit, and consistency checks.
 Verification needed: simulate partial failures and confirm successful repair.
 
+### TD-004 Extraction Parsers Favor Minimal Built-In Reliability
+
+Area: ingestion
+Change trigger: Phase 2 lands broad file-type coverage without introducing external runtime dependencies.
+Compromise: PDF and DOCX extraction uses a minimal parser path (with optional `pypdf` when present), so complex layouts and scanned PDFs can degrade into `extraction_limited`.
+Risk: some documents that users expect to parse fully may produce reduced text quality or limited extraction status.
+Temporary mitigation: surface extraction status and errors in Raw Inbox, keep source files untouched, and retain page/line references where available.
+Exit criteria: adopt production-grade parsers for PDF and DOCX across supported platforms with deterministic fixtures for edge cases.
+Verification needed: add corpus-based extraction quality tests for multi-page PDFs, scanned PDFs, and complex DOCX structures.
+
 ## Resolved Debt
 
 No resolved entries yet.
