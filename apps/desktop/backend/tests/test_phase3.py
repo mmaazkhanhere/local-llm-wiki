@@ -233,3 +233,81 @@ def test_phase3_normalizes_titles_for_paths_and_index_links(
 
     index_text = (vault_path / "Wiki" / "index.md").read_text(encoding="utf-8")
     assert "[[.claude settings.json]] - Configuration for hook execution and routing behavior in Claude." in index_text
+
+
+def test_phase3_regenerates_missing_wiki_for_skipped_unchanged_file(
+    vault_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _bootstrap(vault_path)
+    raw_note = vault_path / "Raw" / "transformers.md"
+    raw_note.write_text(
+        "# Transformers\n\nTransformers use self-attention to model token relationships.\n",
+        encoding="utf-8",
+    )
+
+    first_response = json.dumps(
+        {
+            "concepts": [
+                {
+                    "title": "Self-Attention",
+                    "summary": "Mechanism for weighting relevant tokens during sequence modeling.",
+                    "body": [
+                        "Self-attention lets a model compare each token with other tokens in the same context.",
+                        "It is a core building block in [[Transformer]].",
+                    ],
+                    "links": ["Transformer"],
+                    "source_notes": ['section "Transformers"'],
+                }
+            ],
+            "entities": [],
+            "comparisons": [],
+            "maps": [],
+            "flashcards": [],
+        }
+    )
+    monkeypatch.setattr(
+        "llm_wiki_backend.wiki.service.generate_candidate_response",
+        lambda **_: first_response,
+    )
+
+    first_run = client.post("/ingest/raw/run", params={"vault_path": str(vault_path)})
+    assert first_run.status_code == 200
+    assert first_run.json()["wiki_generation"]["sources_processed_count"] == 1
+
+    concept_page = vault_path / "Wiki" / "Concepts" / "Self-Attention.md"
+    assert concept_page.is_file()
+    concept_page.unlink()
+    assert not concept_page.exists()
+
+    second_response = json.dumps(
+        {
+            "concepts": [
+                {
+                    "title": "Self-Attention",
+                    "summary": "Mechanism for weighting relevant tokens during sequence modeling.",
+                    "body": [
+                        "Self-attention lets a model compare each token with other tokens in the same context.",
+                        "It is a core building block in [[Transformer]].",
+                    ],
+                    "links": ["Transformer"],
+                    "source_notes": ['section "Transformers"'],
+                }
+            ],
+            "entities": [],
+            "comparisons": [],
+            "maps": [],
+            "flashcards": [],
+        }
+    )
+    monkeypatch.setattr(
+        "llm_wiki_backend.wiki.service.generate_candidate_response",
+        lambda **_: second_response,
+    )
+
+    second_run = client.post("/ingest/raw/run", params={"vault_path": str(vault_path)})
+    assert second_run.status_code == 200
+    wiki_generation = second_run.json()["wiki_generation"]
+    assert wiki_generation["sources_processed_count"] == 1
+    assert wiki_generation["failed_count"] == 0
+    assert concept_page.is_file()

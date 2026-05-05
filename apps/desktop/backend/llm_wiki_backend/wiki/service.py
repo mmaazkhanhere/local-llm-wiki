@@ -195,7 +195,7 @@ def _list_pending_extractions(vault_path: Path) -> list[sqlite3.Row]:
             FROM extractions e
             JOIN files f ON f.id = e.file_id
             WHERE f.vault_id = ?
-              AND f.processing_status IN ('processed', 'extraction_limited')
+              AND f.processing_status IN ('processed', 'extraction_limited', 'skipped_unchanged')
             ORDER BY f.relative_path ASC
             """,
             (_vault_id(vault_path),),
@@ -203,19 +203,39 @@ def _list_pending_extractions(vault_path: Path) -> list[sqlite3.Row]:
 
         pending: list[sqlite3.Row] = []
         for row in rows:
-            source_paths_json = json.dumps([str(row["relative_path"])])
-            completed = conn.execute(
-                """
-                SELECT 1
-                FROM audit_events
-                WHERE event_type = 'wiki_generation_completed' AND source_paths_json = ?
-                LIMIT 1
-                """,
-                (source_paths_json,),
-            ).fetchone()
-            if completed is None:
+            if _needs_wiki_regeneration(conn, vault_path=vault_path, row=row):
                 pending.append(row)
         return pending
+
+
+def _needs_wiki_regeneration(conn: sqlite3.Connection, *, vault_path: Path, row: sqlite3.Row) -> bool:
+    source_paths_json = json.dumps([str(row["relative_path"])])
+    completed = conn.execute(
+        """
+        SELECT details_json
+        FROM audit_events
+        WHERE event_type = 'wiki_generation_completed' AND source_paths_json = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (source_paths_json,),
+    ).fetchone()
+    if completed is None:
+        return True
+
+    try:
+        details = json.loads(str(completed["details_json"] or "{}"))
+    except json.JSONDecodeError:
+        return True
+
+    generated_pages = details.get("generated_pages", [])
+    flashcard_files = details.get("flashcard_files", [])
+    for relative in generated_pages + flashcard_files:
+        if not isinstance(relative, str) or not relative.strip():
+            continue
+        if not (vault_path / relative).exists():
+            return True
+    return False
 
 
 def _write_candidate_artifacts(vault_path: Path, extraction_row: sqlite3.Row, payload: CandidatePayload) -> tuple[list[str], list[str]]:
