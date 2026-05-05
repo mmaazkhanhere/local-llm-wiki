@@ -223,11 +223,27 @@ def test_raw_watcher_create_change_and_exclusions(vault_path: Path) -> None:
             return False
         return row["processing_status"] in {"processed", "extraction_limited"}
 
-    _wait_for(watched_processed)
+    _wait_for(watched_processed, timeout_seconds=8.0)
+
+    unsupported = vault_path / "Raw" / "blob.bin"
+    unsupported.write_bytes(b"\x00\x01binary")
+
+    def unsupported_discovered() -> bool:
+        response = client.get("/ingest/raw/inbox", params={"vault_path": str(vault_path)})
+        if response.status_code != 200:
+            return False
+        files = {item["relative_path"]: item for item in response.json()["files"]}
+        row = files.get("Raw/blob.bin")
+        if row is None:
+            return False
+        return row["processing_status"] == "unsupported"
+
+    _wait_for(unsupported_discovered, timeout_seconds=8.0)
 
     inbox = client.get("/ingest/raw/inbox", params={"vault_path": str(vault_path)})
     rows = {item["relative_path"]: item for item in inbox.json()["files"]}
     assert "Raw/watched.txt" in rows
+    assert rows["Raw/blob.bin"]["processing_status"] == "unsupported"
     assert "Raw/Wiki/skip.md" not in rows
 
     before_hash = rows["Raw/watched.txt"]["sha256"]

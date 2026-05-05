@@ -5,7 +5,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from llm_wiki_backend.ingestion.extractors import supported_file_type
 from llm_wiki_backend.ingestion.service import PROTECTED_FOLDERS, process_single_path
 
 
@@ -112,9 +111,6 @@ class RawWatcherManager:
                 continue
             relative = candidate.relative_to(raw_root)
             if _is_excluded_raw_relative(relative):
-                continue
-            file_type = supported_file_type(candidate)
-            if file_type == "unsupported":
                 continue
             stat = candidate.stat()
             fingerprints[candidate.resolve()] = (int(stat.st_size), int(stat.st_mtime_ns))

@@ -73,7 +73,7 @@ export function App() {
     await refreshVaultStatus(selected.payload.vault_path);
     await refreshGroqStatus(selected.payload.vault_path);
     await refreshRawInbox(selected.payload.vault_path);
-    await refreshWatchStatus();
+    await ensureRawWatcherRunning(selected.payload.vault_path);
     const warning = selected.payload.warning ? ` Warning: ${selected.payload.warning}` : "";
     setVaultMessage(`Restored previous vault.${warning}`);
   }
@@ -192,7 +192,7 @@ export function App() {
       });
       await refreshGroqStatus(configured.payload.vault_path);
       await refreshRawInbox(configured.payload.vault_path);
-      await refreshWatchStatus();
+      await ensureRawWatcherRunning(configured.payload.vault_path);
       saveLastVaultPath(configured.payload.vault_path);
       const warning = configured.payload.warning ? ` Warning: ${configured.payload.warning}` : "";
       setVaultMessage(`Vault connected and initialized.${warning}`);
@@ -292,6 +292,28 @@ export function App() {
     setWatchStatus(result.payload);
   }
 
+  async function ensureRawWatcherRunning(pathValue) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !pathValue) return;
+    const status = await desktopApi.rawWatchStatus();
+    if (
+      status.ok &&
+      status.payload &&
+      status.payload.running &&
+      status.payload.vault_path === pathValue
+    ) {
+      setWatchStatus(status.payload);
+      return;
+    }
+    const started = await desktopApi.startRawWatch(pathValue);
+    if (!started.ok || !started.payload) {
+      setWatchStatus({ running: false });
+      setRawMessage(`Failed to start watcher: ${started.error ?? "Unknown error"}`);
+      return;
+    }
+    setWatchStatus(started.payload);
+  }
+
   async function toggleRawWatch() {
     const desktopApi = window.desktopApi;
     if (!desktopApi || !vaultPath) {
@@ -312,6 +334,16 @@ export function App() {
     setRawMessage("Raw watcher started.");
     await refreshWatchStatus();
   }
+
+  useEffect(() => {
+    if (!vaultPath || !watchStatus.running) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      refreshRawInbox(vaultPath);
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [vaultPath, watchStatus.running]);
 
   const isDashboard = activeView === "Dashboard";
   const isSettings = activeView === "Settings";
