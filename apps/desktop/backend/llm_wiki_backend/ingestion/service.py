@@ -47,6 +47,7 @@ def hash_discovered_files(vault_path: Path) -> ProcessSummary:
     queued_count = 0
     skipped_count = 0
     pending_image_count = 0
+    unsupported_count = 0
 
     with connect_database(vault_path) as conn:
         file_rows = conn.execute(
@@ -73,6 +74,7 @@ def hash_discovered_files(vault_path: Path) -> ProcessSummary:
                 pending_image_count += 1
             elif row["file_type"] == "unsupported":
                 next_status = "unsupported"
+                unsupported_count += 1
             elif unchanged and row["processing_status"] in {"processed", "skipped_unchanged", "extraction_limited"}:
                 next_status = "skipped_unchanged"
                 skipped_count += 1
@@ -102,6 +104,7 @@ def hash_discovered_files(vault_path: Path) -> ProcessSummary:
         queued_count=queued_count,
         skipped_count=skipped_count,
         pending_image_count=pending_image_count,
+        unsupported_count=unsupported_count,
     )
 
 
@@ -208,6 +211,7 @@ def ingest_raw_files(vault_path: Path) -> ProcessSummary:
         queued_count=hashed.queued_count,
         skipped_count=hashed.skipped_count,
         pending_image_count=hashed.pending_image_count + processed.pending_image_count,
+        unsupported_count=hashed.unsupported_count,
         processed_count=processed.processed_count,
         failed_count=processed.failed_count,
     )
@@ -274,12 +278,17 @@ def process_single_path(vault_path: Path, file_path: Path) -> ProcessSummary:
 
     hashed = hash_discovered_files(vault_path)
     processed = process_queued_files(vault_path)
+    if processed.processed_count > 0 or processed.failed_count > 0:
+        from llm_wiki_backend.wiki.service import generate_wiki_for_pending_extractions
+
+        generate_wiki_for_pending_extractions(vault_path)
     return ProcessSummary(
         queued_count=hashed.queued_count,
         skipped_count=hashed.skipped_count,
         processed_count=processed.processed_count,
         failed_count=processed.failed_count,
         pending_image_count=hashed.pending_image_count + processed.pending_image_count,
+        unsupported_count=hashed.unsupported_count,
     )
 
 

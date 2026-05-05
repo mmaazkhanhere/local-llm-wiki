@@ -33,6 +33,7 @@ export function App() {
   const [rawInboxFiles, setRawInboxFiles] = useState([]);
   const [rawInboxSummary, setRawInboxSummary] = useState(null);
   const [rawMessage, setRawMessage] = useState("No scan has run yet.");
+  const [wikiGenerationSummary, setWikiGenerationSummary] = useState(null);
   const [watchStatus, setWatchStatus] = useState({ running: false });
 
   function saveLastVaultPath(pathValue) {
@@ -251,6 +252,39 @@ export function App() {
     }
   }
 
+  async function resetVaultData() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath) {
+      setVaultMessage("Select and initialize a vault first.");
+      return;
+    }
+    setRawMessage("Resetting vault data...");
+    const result = await desktopApi.resetVault(vaultPath);
+    if (!result.ok || !result.payload) {
+      setRawMessage(`Vault reset failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setWikiGenerationSummary(null);
+    setRawInboxFiles([]);
+    setRawInboxSummary({
+      discovered_count: 0,
+      queued_count: 0,
+      processed_count: 0,
+      skipped_count: 0,
+      failed_count: 0,
+      pending_image_count: 0,
+      unsupported_count: 0
+    });
+    setGroqKey("");
+    setProviderState("Provider key has not been tested yet.");
+    await refreshVaultStatus(vaultPath);
+    await refreshGroqStatus(vaultPath);
+    await refreshRawInbox(vaultPath);
+    await ensureRawWatcherRunning(vaultPath);
+    setVaultMessage("Vault data reset completed.");
+    setRawMessage("Reset complete. All ingestion counters and wiki generation state cleared.");
+  }
+
   async function refreshRawInbox(pathValue) {
     const desktopApi = window.desktopApi;
     if (!desktopApi || !pathValue) return;
@@ -273,10 +307,16 @@ export function App() {
     const result = await desktopApi.runRawIngest(vaultPath);
     if (!result.ok || !result.payload) {
       setRawMessage(`Raw ingest failed: ${result.error ?? "Unknown error"}`);
+      setWikiGenerationSummary(null);
       return;
     }
+    const wiki = result.payload.wiki_generation ?? null;
+    setWikiGenerationSummary(wiki);
+    const generationSuffix = wiki
+      ? ` | wiki: sources=${wiki.sources_processed_count}, pages=${wiki.pages_created_count}, flashcards=${wiki.flashcard_files_created_count}, failed=${wiki.failed_count}`
+      : "";
     setRawMessage(
-      `Ingest completed. processed=${result.payload.processed_count}, failed=${result.payload.failed_count}, pending_image=${result.payload.pending_image_count}`
+      `Ingest completed. processed=${result.payload.processed_count}, failed=${result.payload.failed_count}, pending_image=${result.payload.pending_image_count}, unsupported=${result.payload.unsupported_count ?? 0}${generationSuffix}`
     );
     await refreshRawInbox(vaultPath);
   }
@@ -336,14 +376,56 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!vaultPath || !watchStatus.running) {
+    if (!vaultPath) {
       return undefined;
     }
-    const timer = setInterval(() => {
-      refreshRawInbox(vaultPath);
-    }, 1500);
-    return () => clearInterval(timer);
-  }, [vaultPath, watchStatus.running]);
+    let active = true;
+    let socket = null;
+    let reconnectTimer = null;
+
+    function connect() {
+      if (!active) return;
+      const url = `ws://127.0.0.1:8765/ws/ingest/raw/inbox?vault_path=${encodeURIComponent(vaultPath)}`;
+      socket = new WebSocket(url);
+
+      socket.onmessage = (event) => {
+        if (!active) return;
+        try {
+          const message = JSON.parse(event.data);
+          if (message.event === "raw_inbox" && message.payload) {
+            setRawInboxFiles(message.payload.files ?? []);
+            setRawInboxSummary(message.payload.summary ?? null);
+          } else if (message.event === "error" && message.message) {
+            setRawMessage(`Raw Inbox stream error: ${message.message}`);
+          }
+        } catch {
+          setRawMessage("Raw Inbox stream received invalid data.");
+        }
+      };
+
+      socket.onclose = () => {
+        socket = null;
+        if (!active) return;
+        reconnectTimer = window.setTimeout(connect, 1500);
+      };
+
+      socket.onerror = () => {
+        setRawMessage("Raw Inbox stream disconnected. Reconnecting...");
+      };
+    }
+
+    connect();
+
+    return () => {
+      active = false;
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
+      if (socket) {
+        socket.close();
+      }
+    };
+  }, [vaultPath]);
 
   const isDashboard = activeView === "Dashboard";
   const isSettings = activeView === "Settings";
@@ -384,6 +466,9 @@ export function App() {
               <button type="button" className="action-btn" onClick={connectVault}>
                 Select Obsidian Vault
               </button>
+              <button type="button" className="nav-btn" onClick={resetVaultData}>
+                Reset Vault Data
+              </button>
               <p><strong>Selected vault:</strong> {vaultPath || "None"}</p>
               <p>{vaultMessage}</p>
               <p><strong>.obsidian:</strong> {status.hasObsidian ? "Found" : "Not found (warning only)"}</p>
@@ -420,6 +505,9 @@ export function App() {
                 <button type="button" className="action-btn" onClick={testGroqConnection}>
                   Test Connection
                 </button>
+                <button type="button" className="nav-btn" onClick={resetVaultData}>
+                  Reset Vault Data
+                </button>
                 <button type="button" className="nav-btn" onClick={() => refreshVaultStatus(vaultPath)}>
                   Refresh Status
                 </button>
@@ -453,10 +541,40 @@ export function App() {
               <p><strong>Watcher:</strong> {watchStatus.running ? "Running" : "Stopped"}</p>
               {rawInboxSummary && (
                 <p>
-                  <strong>Summary:</strong> files={rawInboxSummary.discovered_count}, queued={rawInboxSummary.queued_count}, processed={rawInboxSummary.processed_count}, failed={rawInboxSummary.failed_count}, pending_image={rawInboxSummary.pending_image_count}
+                  <strong>Summary:</strong> files={rawInboxSummary.discovered_count}, queued={rawInboxSummary.queued_count}, processed={rawInboxSummary.processed_count}, failed={rawInboxSummary.failed_count}, pending_image={rawInboxSummary.pending_image_count}, unsupported={rawInboxSummary.unsupported_count ?? 0}
                 </p>
               )}
               <p>{rawMessage}</p>
+              {wikiGenerationSummary && (
+                <div>
+                  <p>
+                    <strong>Wiki generation:</strong>{" "}
+                    sources={wikiGenerationSummary.sources_processed_count}, candidates={wikiGenerationSummary.candidate_count}, pages={wikiGenerationSummary.pages_created_count}, flashcards={wikiGenerationSummary.flashcard_files_created_count}, failed={wikiGenerationSummary.failed_count}
+                  </p>
+                  {wikiGenerationSummary.sources?.length > 0 && (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Source</th>
+                          <th>Status</th>
+                          <th>Pages</th>
+                          <th>Error</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {wikiGenerationSummary.sources.map((source) => (
+                          <tr key={source.relative_path}>
+                            <td>{source.relative_path}</td>
+                            <td>{source.status}</td>
+                            <td>{source.generated_pages?.length ?? 0}</td>
+                            <td>{source.error_message || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
               <div>
                 {rawInboxFiles.length === 0 && <p>No discovered files yet.</p>}
                 {rawInboxFiles.length > 0 && (

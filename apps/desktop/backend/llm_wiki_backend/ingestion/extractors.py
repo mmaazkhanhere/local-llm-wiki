@@ -11,7 +11,7 @@ from pathlib import Path
 
 from llm_wiki_backend.ingestion.types import ChunkDraft, ExtractionDraft
 
-TEXT_EXTENSIONS = {".md", ".txt"}
+TEXT_EXTENSIONS = {".md", ".markdown", ".txt", ".text", ".log", ".rst"}
 PDF_EXTENSIONS = {".pdf"}
 DOCX_EXTENSIONS = {".docx"}
 HTML_EXTENSIONS = {".html", ".htm"}

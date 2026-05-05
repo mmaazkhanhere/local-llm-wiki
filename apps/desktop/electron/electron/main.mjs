@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,12 +13,49 @@ const isDev = !app.isPackaged;
 
 let mainWindow = null;
 let backendProcess = null;
+let backendPid = null;
 let stoppingBackend = false;
+
+function killProcessTreeOnWindows(pid) {
+  if (!pid) {
+    return;
+  }
+  spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+    windowsHide: true,
+    stdio: "ignore",
+    timeout: 3000
+  });
+}
+
+function killListenersOnBackendPort() {
+  if (process.platform !== "win32") {
+    return;
+  }
+  spawnSync(
+    "powershell",
+    [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      `$port = ${backendPort}; ` +
+        "$conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue; " +
+        "if ($conns) { $pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique; " +
+        "foreach ($id in $pids) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue } }"
+    ],
+    {
+      windowsHide: true,
+      stdio: "ignore",
+      timeout: 3000
+    }
+  );
+}
 
 function startBackend() {
   if (backendProcess) {
     return;
   }
+  killListenersOnBackendPort();
 
   backendProcess = spawn(
     "uv",
@@ -29,6 +66,7 @@ function startBackend() {
       windowsHide: true
     }
   );
+  backendPid = backendProcess.pid ?? null;
 
   backendProcess.stdout.on("data", (chunk) => {
     const message = chunk.toString().trim();
@@ -54,30 +92,25 @@ function startBackend() {
 }
 
 function stopBackend() {
-  if (!backendProcess || stoppingBackend) {
+  if (stoppingBackend) {
     return;
   }
-  stoppingBackend = true;
-  const pid = backendProcess.pid;
-  if (process.platform === "win32" && pid) {
-    const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
-      windowsHide: true,
-      stdio: "ignore"
-    });
-    killer.on("exit", () => {
-      backendProcess = null;
-      stoppingBackend = false;
-    });
-    killer.on("error", () => {
-      backendProcess?.kill();
-      backendProcess = null;
-      stoppingBackend = false;
-    });
+  const pid = backendProcess?.pid ?? backendPid;
+  if (!pid) {
     return;
   }
 
-  backendProcess.kill();
+  stoppingBackend = true;
+  if (process.platform === "win32") {
+    killProcessTreeOnWindows(pid);
+    // Defensive cleanup for uv-run child process trees that survive parent exit.
+    killListenersOnBackendPort();
+  } else {
+    backendProcess?.kill("SIGTERM");
+  }
+
   backendProcess = null;
+  backendPid = null;
   stoppingBackend = false;
 }
 
@@ -169,6 +202,7 @@ async function backendGet(route, query = "") {
 ipcMain.handle("vault-select", async (_, pathValue) => backendPost("/vault/select", { path: pathValue }));
 
 ipcMain.handle("vault-bootstrap", async (_, pathValue) => backendPost("/vault/bootstrap", { path: pathValue }));
+ipcMain.handle("vault-reset", async (_, pathValue) => backendPost("/vault/reset", { path: pathValue }));
 
 ipcMain.handle("vault-configure", async (_, pathValue) => backendPost("/vault/configure", { path: pathValue }));
 
@@ -219,6 +253,10 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  stopBackend();
+});
+
+app.on("will-quit", () => {
   stopBackend();
 });
 

@@ -36,6 +36,14 @@ class BootstrapResponse(BaseModel):
     config_path: str
 
 
+class ResetVaultResponse(BaseModel):
+    vault_path: str
+    removed_paths: list[str]
+    created_directories: list[str]
+    created_files: list[str]
+    config_path: str
+
+
 class ProviderSettings(BaseModel):
     provider: str = "groq"
     default_text_model: str = "openai/gpt-oss-120b"
@@ -78,6 +86,33 @@ class ProviderStatusResponse(BaseModel):
     vision_model: str | None = None
 
 
+class WikiCandidateGroupResponse(BaseModel):
+    concepts: list[str] = Field(default_factory=list)
+    entities: list[str] = Field(default_factory=list)
+    comparisons: list[str] = Field(default_factory=list)
+    maps: list[str] = Field(default_factory=list)
+    flashcards: list[str] = Field(default_factory=list)
+
+
+class WikiGenerationSourceResponse(BaseModel):
+    relative_path: str
+    status: str
+    generated_pages: list[str] = Field(default_factory=list)
+    flashcard_files: list[str] = Field(default_factory=list)
+    candidates: WikiCandidateGroupResponse = Field(default_factory=WikiCandidateGroupResponse)
+    error_message: str | None = None
+
+
+class WikiGenerationSummaryResponse(BaseModel):
+    sources_processed_count: int = 0
+    candidate_count: int = 0
+    pages_created_count: int = 0
+    flashcard_files_created_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    sources: list[WikiGenerationSourceResponse] = Field(default_factory=list)
+
+
 class StatusResponse(BaseModel):
     vault_path: str
     has_obsidian: bool
@@ -104,6 +139,8 @@ class IngestSummaryResponse(BaseModel):
     skipped_count: int = 0
     failed_count: int = 0
     pending_image_count: int = 0
+    unsupported_count: int = 0
+    wiki_generation: WikiGenerationSummaryResponse | None = None
 
 
 class RawInboxResponse(BaseModel):

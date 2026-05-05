@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import asyncio
+import json
+
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from llm_wiki_backend.core.config import load_config, save_config
 from llm_wiki_backend.core.errors import ConfigError, VaultValidationError
@@ -14,12 +17,16 @@ from llm_wiki_backend.core.models import (
     ProviderTestResponse,
     ProviderStatusResponse,
     RawInboxResponse,
+    ResetVaultResponse,
     SelectVaultRequest,
     SelectVaultResponse,
     StatusResponse,
+    WikiGenerationSourceResponse,
+    WikiGenerationSummaryResponse,
+    WikiCandidateGroupResponse,
     WatcherStatusResponse,
 )
-from llm_wiki_backend.db.service import initialize_database
+from llm_wiki_backend.db.service import clear_all_runtime_data, initialize_database
 from llm_wiki_backend.ingestion.service import (
     hash_discovered_files,
     ingest_raw_files,
@@ -31,13 +38,16 @@ from llm_wiki_backend.ingestion.watcher import RAW_WATCHER
 from llm_wiki_backend.llm.groq import test_groq_connection
 from llm_wiki_backend.security.secrets import save_groq_key
 from llm_wiki_backend.security.secrets import has_groq_key
+from llm_wiki_backend.security.secrets import clear_groq_key
 from llm_wiki_backend.vault.service import (
     create_required_directories,
     create_wiki_index_files,
     detect_git,
     detect_obsidian_cli,
+    reset_generated_state,
     validate_vault,
 )
+from llm_wiki_backend.wiki.service import generate_wiki_for_pending_extractions
 
 router = APIRouter()
 
@@ -147,6 +157,30 @@ def provider_status(vault_path: str) -> ProviderStatusResponse:
     )
 
 
+@router.post("/vault/reset", response_model=ResetVaultResponse)
+def reset_vault(request: SelectVaultRequest) -> ResetVaultResponse:
+    try:
+        vault_path, _ = validate_vault(request.path)
+    except VaultValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    RAW_WATCHER.stop()
+    removed_paths = reset_generated_state(vault_path)
+    initialize_database(vault_path)
+    clear_all_runtime_data(vault_path)
+    created_dirs = create_required_directories(vault_path)
+    created_files = create_wiki_index_files(vault_path)
+    config = AppConfig(vault_path=str(vault_path))
+    config_path = save_config(config, vault_path)
+    clear_groq_key(vault_path)
+    return ResetVaultResponse(
+        vault_path=str(vault_path),
+        removed_paths=removed_paths,
+        created_directories=created_dirs,
+        created_files=created_files,
+        config_path=str(config_path),
+    )
+
+
 @router.post("/ingest/raw/scan", response_model=IngestSummaryResponse)
 def raw_scan(vault_path: str) -> IngestSummaryResponse:
     try:
@@ -184,7 +218,29 @@ def raw_run(vault_path: str) -> IngestSummaryResponse:
     except VaultValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     summary = ingest_raw_files(vault)
-    return IngestSummaryResponse(**summary.__dict__)
+    wiki_generation = generate_wiki_for_pending_extractions(vault)
+    return IngestSummaryResponse(
+        **summary.__dict__,
+        wiki_generation=WikiGenerationSummaryResponse(
+            sources_processed_count=wiki_generation.sources_processed_count,
+            candidate_count=wiki_generation.candidate_count,
+            pages_created_count=wiki_generation.pages_created_count,
+            flashcard_files_created_count=wiki_generation.flashcard_files_created_count,
+            skipped_count=wiki_generation.skipped_count,
+            failed_count=wiki_generation.failed_count,
+            sources=[
+                WikiGenerationSourceResponse(
+                    relative_path=item.relative_path,
+                    status=item.status,
+                    generated_pages=item.generated_pages,
+                    flashcard_files=item.flashcard_files,
+                    candidates=WikiCandidateGroupResponse(**item.candidates),
+                    error_message=item.error_message,
+                )
+                for item in (wiki_generation.sources or [])
+            ],
+        ),
+    )
 
 
 @router.get("/ingest/raw/inbox", response_model=RawInboxResponse)
@@ -194,17 +250,33 @@ def raw_inbox(vault_path: str) -> RawInboxResponse:
     except VaultValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     files = list_raw_inbox(vault)
-    return RawInboxResponse(
-        summary=IngestSummaryResponse(
-            discovered_count=len(files),
-            queued_count=sum(1 for item in files if item.processing_status == "queued"),
-            processed_count=sum(1 for item in files if item.processing_status == "processed"),
-            skipped_count=sum(1 for item in files if item.processing_status == "skipped_unchanged"),
-            failed_count=sum(1 for item in files if item.processing_status.startswith("failed")),
-            pending_image_count=sum(1 for item in files if item.processing_status == "pending_image"),
-        ),
-        files=[IngestFileResponse(**item.__dict__) for item in files],
-    )
+    return _build_raw_inbox_response(files)
+
+
+@router.websocket("/ws/ingest/raw/inbox")
+async def raw_inbox_stream(websocket: WebSocket) -> None:
+    await websocket.accept()
+    vault_path = websocket.query_params.get("vault_path", "")
+    try:
+        vault, _ = validate_vault(vault_path)
+    except VaultValidationError:
+        await websocket.send_json({"event": "error", "message": "Invalid vault path."})
+        await websocket.close(code=1008)
+        return
+
+    last_payload = ""
+    try:
+        while True:
+            files = list_raw_inbox(vault)
+            inbox = _build_raw_inbox_response(files)
+            payload = inbox.model_dump()
+            serialized = json.dumps(payload, sort_keys=True)
+            if serialized != last_payload:
+                await websocket.send_json({"event": "raw_inbox", "payload": payload})
+                last_payload = serialized
+            await asyncio.sleep(0.75)
+    except WebSocketDisconnect:
+        return
 
 
 @router.post("/ingest/raw/watch/start", response_model=WatcherStatusResponse)
@@ -233,3 +305,18 @@ def raw_watch_stop() -> WatcherStatusResponse:
 def raw_watch_status() -> WatcherStatusResponse:
     status = RAW_WATCHER.status()
     return WatcherStatusResponse(**status.__dict__)
+
+
+def _build_raw_inbox_response(files) -> RawInboxResponse:
+    return RawInboxResponse(
+        summary=IngestSummaryResponse(
+            discovered_count=len(files),
+            queued_count=sum(1 for item in files if item.processing_status == "queued"),
+            processed_count=sum(1 for item in files if item.processing_status == "processed"),
+            skipped_count=sum(1 for item in files if item.processing_status == "skipped_unchanged"),
+            failed_count=sum(1 for item in files if item.processing_status.startswith("failed")),
+            pending_image_count=sum(1 for item in files if item.processing_status == "pending_image"),
+            unsupported_count=sum(1 for item in files if item.processing_status == "unsupported"),
+        ),
+        files=[IngestFileResponse(**item.__dict__) for item in files],
+    )

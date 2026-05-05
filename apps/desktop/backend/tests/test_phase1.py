@@ -103,6 +103,36 @@ def test_bootstrap_is_idempotent_for_existing_files(vault_path: Path) -> None:
     assert log_path.read_text(encoding="utf-8") == original_log
 
 
+def test_vault_reset_clears_generated_and_settings_state(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("llm_wiki_backend.api.routes.test_groq_connection", lambda *_args, **_kwargs: (True, "ok"))
+    bootstrap = client.post("/vault/bootstrap", json={"path": str(vault_path)})
+    assert bootstrap.status_code == 200
+    raw_dir = vault_path / "Raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    (raw_dir / "note.md").write_text("# hi", encoding="utf-8")
+    run = client.post("/ingest/raw/run", params={"vault_path": str(vault_path)})
+    assert run.status_code == 200
+    provider = client.post(
+        "/provider/groq/test",
+        params={"vault_path": str(vault_path)},
+        json={"api_key": "test-key"},
+    )
+    assert provider.status_code == 200
+
+    reset = client.post("/vault/reset", json={"path": str(vault_path)})
+    assert reset.status_code == 200
+    body = reset.json()
+    assert "Wiki" in body["removed_paths"]
+    assert (vault_path / "Wiki/index.md").is_file()
+    assert (vault_path / "Wiki/log.md").is_file()
+    assert not (vault_path / ".llm-wiki/secrets.enc.json").exists()
+
+    inbox = client.get("/ingest/raw/inbox", params={"vault_path": str(vault_path)})
+    assert inbox.status_code == 200
+    assert inbox.json()["summary"]["processed_count"] == 0
+    assert inbox.json()["summary"]["queued_count"] == 0
+
+
 def test_bootstrap_does_not_modify_unrelated_files(vault_path: Path) -> None:
     notes = vault_path / "Personal"
     notes.mkdir()

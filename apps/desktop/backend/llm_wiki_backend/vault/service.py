@@ -53,6 +53,30 @@ def create_wiki_index_files(vault_path: Path) -> list[str]:
     return created
 
 
+def reset_generated_state(vault_path: Path) -> list[str]:
+    removed: list[str] = []
+    wiki = vault_path / "Wiki"
+    if wiki.exists():
+        shutil.rmtree(wiki, ignore_errors=False)
+        removed.append("Wiki")
+
+    llm_wiki = vault_path / ".llm-wiki"
+    if llm_wiki.exists() and llm_wiki.is_dir():
+        for entry in llm_wiki.iterdir():
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+                removed.append(f".llm-wiki/{entry.name}")
+                continue
+            if entry.name in {"config.json", "secrets.enc.json", "audit.jsonl", "app.db-wal", "app.db-shm"}:
+                try:
+                    entry.unlink(missing_ok=True)
+                    removed.append(f".llm-wiki/{entry.name}")
+                except PermissionError:
+                    # SQLite sidecars may still be locked briefly on Windows.
+                    continue
+    return removed
+
+
 def detect_git(vault_path: Path) -> bool:
     return (vault_path / ".git").is_dir()
 

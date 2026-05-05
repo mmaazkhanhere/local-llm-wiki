@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("desktopApi", {
   openVaultPicker: () => ipcRenderer.invoke("vault-pick-folder"),
   selectVault: (path) => ipcRenderer.invoke("vault-select", path),
   bootstrapVault: (path) => ipcRenderer.invoke("vault-bootstrap", path),
+  resetVault: (path) => ipcRenderer.invoke("vault-reset", path),
   configureVault: (path) => ipcRenderer.invoke("vault-configure", path),
   vaultStatus: (path) => ipcRenderer.invoke("vault-status", path),
   testGroqKey: (vaultPath, apiKey) => ipcRenderer.invoke("provider-groq-test", vaultPath, apiKey),

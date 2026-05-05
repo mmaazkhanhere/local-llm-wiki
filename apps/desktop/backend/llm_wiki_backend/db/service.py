@@ -22,6 +22,20 @@ def connect_database(vault_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def clear_all_runtime_data(vault_path: Path) -> None:
+    with connect_database(vault_path) as conn:
+        conn.execute("DELETE FROM chunks_fts;")
+        conn.execute("DELETE FROM chunks;")
+        conn.execute("DELETE FROM extractions;")
+        conn.execute("DELETE FROM files;")
+        conn.execute("DELETE FROM wiki_pages;")
+        conn.execute("DELETE FROM proposed_updates;")
+        conn.execute("DELETE FROM audit_events;")
+        conn.execute("DELETE FROM flashcards;")
+        conn.execute("DELETE FROM review_items;")
+        conn.commit()
+
+
 def _schema_sql() -> str:
     return """
     CREATE TABLE IF NOT EXISTS vaults (
