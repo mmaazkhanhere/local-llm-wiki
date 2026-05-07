@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import net from "node:net";
+import { execFile } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,6 +69,64 @@ function isPortOpen(port) {
   });
 }
 
+function execFilePromise(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, options, (error, stdout, stderr) => {
+      if (error) {
+        reject(Object.assign(error, { stdout, stderr }));
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+async function pidListeningOnPort(port) {
+  if (process.platform !== "win32") {
+    return null;
+  }
+  try {
+    const { stdout } = await execFilePromise("netstat", ["-ano", "-p", "tcp"], { windowsHide: true });
+    const lines = String(stdout || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (const line of lines) {
+      if (!line.startsWith("TCP")) continue;
+      const parts = line.split(/\s+/);
+      // netstat columns: Proto LocalAddress ForeignAddress State PID
+      if (parts.length < 5) continue;
+      const local = parts[1];
+      const state = parts[3];
+      const pid = parts[4];
+      if (state !== "LISTENING") continue;
+      if (!local.endsWith(`:${port}`)) continue;
+      const parsed = Number.parseInt(pid, 10);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function killPid(pid) {
+  if (!pid) return false;
+  try {
+    if (process.platform === "win32") {
+      await execFilePromise("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true });
+      return true;
+    }
+    process.kill(pid, "SIGTERM");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function stopBackend() {
   if (!backendProcess || stoppingBackend) {
     await clearBackendPid();
@@ -116,19 +175,27 @@ async function startBackend() {
 
   const alreadyRunning = await isPortOpen(backendPort);
   if (alreadyRunning) {
-    const stalePid = await readBackendPid();
-    if (stalePid) {
-      try {
-        process.kill(stalePid, "SIGTERM");
-      } catch {
-        // Not our process or not killable.
-      }
+    const previousPid = await readBackendPid();
+    if (previousPid) {
+      await killPid(previousPid);
       await new Promise((resolve) => setTimeout(resolve, 400));
     }
   }
 
   if (await isPortOpen(backendPort)) {
-    console.error(`[backend] port ${backendPort} is already in use; not starting a new backend`);
+    const pid = await pidListeningOnPort(backendPort);
+    if (pid) {
+      const killed = await killPid(pid);
+      if (killed) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+    }
+  }
+
+  if (await isPortOpen(backendPort)) {
+    const pid = await pidListeningOnPort(backendPort);
+    const pidText = pid ? ` (pid=${pid})` : "";
+    console.error(`[backend] port ${backendPort} is already in use${pidText}; not starting a new backend`);
     return;
   }
 
@@ -311,10 +378,12 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  stopBackend();
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  (async () => {
+    await stopBackend();
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  })();
 });
 
 app.on("before-quit", async (event) => {

@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 
-from llm_wiki_backend.api.routes import router
+from llm_wiki_backend.api.router import api_router
 from llm_wiki_backend.core.models import HealthResponse
 
 app = FastAPI(title="Local LLM Wiki Backend", version="0.1.0")
-app.include_router(router)
+app.include_router(api_router)
 
 
 @app.get("/health", response_model=HealthResponse)

@@ -150,7 +150,7 @@ def test_provider_test_success_stores_secret(vault_path: Path, monkeypatch: pyte
         assert api_key == "test-key"
         return True, "ok"
 
-    monkeypatch.setattr("llm_wiki_backend.api.routes.test_groq_connection", fake_test)
+    monkeypatch.setattr("llm_wiki_backend.api.router.provider_router.test_groq_connection", fake_test)
     response = client.post(
         "/provider/groq/test",
         params={"vault_path": str(vault_path)},
@@ -165,7 +165,7 @@ def test_provider_test_failure_does_not_store_secret(vault_path: Path, monkeypat
     def fake_test(api_key: str, timeout_seconds: float = 10.0) -> tuple[bool, str]:
         return False, "bad auth"
 
-    monkeypatch.setattr("llm_wiki_backend.api.routes.test_groq_connection", fake_test)
+    monkeypatch.setattr("llm_wiki_backend.api.router.provider_router.test_groq_connection", fake_test)
     response = client.post(
         "/provider/groq/test",
         params={"vault_path": str(vault_path)},

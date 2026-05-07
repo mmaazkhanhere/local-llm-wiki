@@ -1,1 +1,1 @@
-__all__ = ["routes"]
+__all__ = ["router"]
