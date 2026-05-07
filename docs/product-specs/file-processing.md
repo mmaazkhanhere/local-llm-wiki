@@ -14,9 +14,10 @@ Turn a supported raw file into generated wiki artifacts without mutating the sou
 6. extract normalized text
 7. store source-document metadata
 8. create retrieval chunks
-9. generate wiki output
-10. write markdown atomically
-11. update index, logs, and status
+9. generate brand-new wiki output immediately
+10. generate review proposals for existing pages when needed
+11. write only approved existing-page updates atomically
+12. update index, logs, audit, and status
 
 ## Initial File Priority
 

@@ -15,6 +15,14 @@ contextBridge.exposeInMainWorld("desktopApi", {
   startRawWatch: (vaultPath) => ipcRenderer.invoke("raw-watch-start", vaultPath),
   stopRawWatch: () => ipcRenderer.invoke("raw-watch-stop"),
   rawWatchStatus: () => ipcRenderer.invoke("raw-watch-status"),
+  reviewList: (vaultPath, status = "pending") => ipcRenderer.invoke("review-list", vaultPath, status),
+  reviewGet: (vaultPath, proposalId) => ipcRenderer.invoke("review-get", vaultPath, proposalId),
+  reviewEdit: (vaultPath, proposalId, proposedContent) =>
+    ipcRenderer.invoke("review-edit", vaultPath, proposalId, proposedContent),
+  reviewApprove: (vaultPath, proposalId) => ipcRenderer.invoke("review-approve", vaultPath, proposalId),
+  reviewReject: (vaultPath, proposalId) => ipcRenderer.invoke("review-reject", vaultPath, proposalId),
+  reviewApproveAll: (vaultPath, sourceRelativePath) =>
+    ipcRenderer.invoke("review-approve-all", vaultPath, sourceRelativePath),
   onBackendExited: (listener) => {
     ipcRenderer.on("backend-exited", (_, payload) => listener(payload));
   }

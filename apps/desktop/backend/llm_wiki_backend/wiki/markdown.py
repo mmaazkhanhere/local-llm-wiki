@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import difflib
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -53,6 +54,65 @@ def render_flashcards(title: str, cards: list[FlashcardCandidate], source_relati
     return "\n".join(lines).strip() + "\n"
 
 
+def render_review_file(
+    *,
+    target_title: str,
+    target_relative_path: str,
+    source_relative_path: str,
+    reason: str,
+    current_content: str,
+    proposed_content: str,
+    citations: list[str],
+) -> str:
+    diff_text = "\n".join(
+        difflib.unified_diff(
+            current_content.splitlines(),
+            proposed_content.splitlines(),
+            fromfile=f"a/{target_relative_path}",
+            tofile=f"b/{target_relative_path}",
+            lineterm="",
+        )
+    )
+    sections = [
+        f"# Review: {target_title}",
+        "",
+        f"Target: `{target_relative_path}`",
+        f"Source: `{source_relative_path}`",
+        "",
+        "## Reason",
+        "",
+        reason.strip(),
+        "",
+        "## Citations",
+        "",
+    ]
+    for citation in citations:
+        sections.append(f"- Source: `{source_relative_path}`, {citation}")
+    sections.extend(
+        [
+            "",
+            "## Diff",
+            "",
+            "```diff",
+            diff_text or "(no diff)",
+            "```",
+            "",
+            "## Current Content",
+            "",
+            "```markdown",
+            current_content.rstrip(),
+            "```",
+            "",
+            "## Proposed Content",
+            "",
+            "```markdown",
+            proposed_content.rstrip(),
+            "```",
+        ]
+    )
+    return "\n".join(sections).strip() + "\n"
+
+
 def atomic_write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_name(f".{path.name}.tmp")
@@ -62,6 +122,28 @@ def atomic_write_text(path: Path, content: str) -> None:
 
 def sha256_text(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def extract_title(markdown: str) -> str:
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip()
+    raise WikiGenerationError("Wiki page is missing a top-level title.")
+
+
+def extract_summary(markdown: str) -> str:
+    lines = markdown.splitlines()
+    seen_title = False
+    for line in lines:
+        stripped = line.strip()
+        if not seen_title:
+            if stripped.startswith("# "):
+                seen_title = True
+            continue
+        if stripped and not stripped.startswith("## "):
+            return stripped
+    return ""
 
 
 def title_exists_anywhere(vault_path: Path, title: str) -> bool:

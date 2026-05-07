@@ -73,6 +73,7 @@ body {
   border-radius: 10px;
   padding: 20px;
 }
+
 .stack {
   display: flex;
   flex-direction: column;
@@ -94,8 +95,23 @@ body {
   width: fit-content;
 }
 
+.success-btn {
+  background: #146c43;
+  border-color: #146c43;
+}
+
+.danger-btn {
+  border: 1px solid #a32b2b;
+  background: #a32b2b;
+  color: #ffffff;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
 input[type="password"],
-input[type="text"] {
+input[type="text"],
+textarea {
   max-width: 420px;
   border: 1px solid #bcc9de;
   border-radius: 8px;
@@ -126,4 +142,136 @@ td {
 
 th {
   background: #f4f6fb;
+}
+
+.review-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.review-list,
+.review-detail,
+.review-source-card,
+.diff-panel {
+  border: 1px solid #d8deea;
+  border-radius: 12px;
+  background: #fbfcff;
+}
+
+.review-list,
+.review-detail {
+  padding: 16px;
+}
+
+.review-source-card {
+  padding: 14px;
+}
+
+.review-source-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.proposal-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #d8deea;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.proposal-btn.active {
+  border-color: #244b8a;
+  background: #eef4ff;
+}
+
+.review-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.diff-viewer {
+  overflow: auto;
+  border-radius: 10px;
+  background: #0e1726;
+  color: #e6edf7;
+  padding: 12px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.9rem;
+}
+
+.diff-line {
+  white-space: pre-wrap;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.diff-line.added {
+  background: rgba(20, 108, 67, 0.3);
+  color: #ccf5de;
+}
+
+.diff-line.removed {
+  background: rgba(163, 43, 43, 0.3);
+  color: #ffd8d8;
+}
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.content-box,
+.editor-box {
+  width: 100%;
+  min-height: 360px;
+  border: 1px solid #d8deea;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.92rem;
+}
+
+.content-box {
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.editor-box {
+  resize: vertical;
+  max-width: none;
+}
+
+.muted {
+  color: #5c6b82;
+}
+
+@media (max-width: 1100px) {
+  .review-layout,
+  .editor-grid,
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    padding-bottom: 12px;
+  }
+
+  .review-summary {
+    flex-direction: column;
+  }
 }

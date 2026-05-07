@@ -117,3 +117,36 @@ class WatcherStatusResponse(BaseModel):
     vault_path: str | None = None
     poll_interval_seconds: float
     stabilize_seconds: float
+
+
+class ReviewProposalResponse(BaseModel):
+    id: str
+    source_relative_path: str
+    target_relative_path: str
+    target_title: str
+    reason: str
+    confidence: str | None = None
+    old_content: str
+    proposed_content: str
+    review_path: str | None = None
+    status: str
+    created_at: str
+    edited_at: str | None = None
+    resolved_at: str | None = None
+    last_error: str | None = None
+    source_citations: list[dict] = Field(default_factory=list)
+    diff: list[dict] = Field(default_factory=list)
+
+
+class ReviewProposalListResponse(BaseModel):
+    proposals: list[ReviewProposalResponse] = Field(default_factory=list)
+
+
+class EditProposalRequest(BaseModel):
+    proposed_content: str = Field(min_length=1)
+
+
+class ApproveAllResponse(BaseModel):
+    applied: int = 0
+    conflicted: int = 0
+    failed: int = 0

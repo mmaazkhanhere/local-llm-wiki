@@ -2,13 +2,14 @@
 
 ## Decision
 
-The repository is designed around generated writes landing automatically in app-owned areas.
+The repository is designed around generated writes landing automatically in app-owned areas for new artifacts, while existing wiki-page updates go through an explicit review queue.
 
 ## Why
 
 - lower user friction
 - faster path from source to usable wiki
-- fewer review-queue mechanics in the MVP
+- low-friction creation for new pages
+- explicit review for churn on existing pages
 
 ## Required Safeguards
 
@@ -21,4 +22,4 @@ The repository is designed around generated writes landing automatically in app-
 
 ## Consequence
 
-Because pre-write review is not the primary safety mechanism, write-scope enforcement and auditability are not optional.
+Because only part of the write path is review-gated, write-scope enforcement, conflict detection, and auditability are not optional.

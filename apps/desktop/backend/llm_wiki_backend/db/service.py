@@ -13,6 +13,22 @@ def initialize_database(vault_path: Path) -> Path:
         conn.executescript(_phase2_schema_sql())
         _ensure_column(conn, "files", "wiki_generated_sha256", "TEXT")
         _ensure_column(conn, "files", "wiki_generated_at", "TEXT")
+        _ensure_column(conn, "wiki_pages", "title", "TEXT")
+        _ensure_column(conn, "wiki_pages", "summary", "TEXT")
+        _ensure_column(conn, "proposed_updates", "source_file_id", "TEXT")
+        _ensure_column(conn, "proposed_updates", "source_relative_path", "TEXT")
+        _ensure_column(conn, "proposed_updates", "source_sha256", "TEXT")
+        _ensure_column(conn, "proposed_updates", "target_relative_path", "TEXT")
+        _ensure_column(conn, "proposed_updates", "target_title", "TEXT")
+        _ensure_column(conn, "proposed_updates", "reason", "TEXT")
+        _ensure_column(conn, "proposed_updates", "confidence", "TEXT")
+        _ensure_column(conn, "proposed_updates", "source_citations_json", "TEXT")
+        _ensure_column(conn, "proposed_updates", "review_path", "TEXT")
+        _ensure_column(conn, "proposed_updates", "ingest_run_id", "TEXT")
+        _ensure_column(conn, "proposed_updates", "model", "TEXT")
+        _ensure_column(conn, "proposed_updates", "target_sha256_at_creation", "TEXT")
+        _ensure_column(conn, "proposed_updates", "edited_at", "TEXT")
+        _ensure_column(conn, "proposed_updates", "last_error", "TEXT")
         conn.commit()
     return db_path
 
@@ -80,10 +96,24 @@ def _schema_sql() -> str:
     CREATE TABLE IF NOT EXISTS proposed_updates (
       id TEXT PRIMARY KEY,
       wiki_page_id TEXT NOT NULL,
+      source_file_id TEXT,
+      source_relative_path TEXT,
+      source_sha256 TEXT,
+      target_relative_path TEXT,
+      target_title TEXT,
       old_content TEXT NOT NULL,
       proposed_content TEXT NOT NULL,
+      reason TEXT,
+      confidence TEXT,
+      source_citations_json TEXT,
+      review_path TEXT,
+      ingest_run_id TEXT,
+      model TEXT,
+      target_sha256_at_creation TEXT,
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
+      edited_at TEXT,
+      last_error TEXT,
       resolved_at TEXT
     );
     CREATE TABLE IF NOT EXISTS audit_events (
@@ -124,6 +154,12 @@ def _phase2_schema_sql() -> str:
       ON extractions(file_id);
     CREATE INDEX IF NOT EXISTS idx_chunks_extraction
       ON chunks(extraction_id);
+    CREATE INDEX IF NOT EXISTS idx_wiki_pages_relative_path
+      ON wiki_pages(relative_path);
+    CREATE INDEX IF NOT EXISTS idx_proposed_updates_status
+      ON proposed_updates(status);
+    CREATE INDEX IF NOT EXISTS idx_proposed_updates_source
+      ON proposed_updates(source_relative_path);
 
     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
       chunk_id UNINDEXED,
@@ -135,6 +171,14 @@ def _phase2_schema_sql() -> str:
       page_number UNINDEXED,
       line_start UNINDEXED,
       line_end UNINDEXED
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS wiki_pages_fts USING fts5(
+      wiki_page_id UNINDEXED,
+      relative_path UNINDEXED,
+      title,
+      summary,
+      content
     );
     """
 

@@ -341,6 +341,23 @@ async function backendGet(route, query = "") {
   }
 }
 
+async function backendPut(route, body, query = "") {
+  try {
+    const response = await fetch(`${backendUrl}${route}${query}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      return { ok: false, status: response.status, error: payload?.detail ?? "Request failed" };
+    }
+    return { ok: true, payload };
+  } catch (error) {
+    return { ok: false, status: 503, error: `Backend unavailable: ${String(error)}` };
+  }
+}
+
 ipcMain.handle("vault-select", async (_, pathValue) => backendPost("/vault/select", { path: pathValue }));
 
 ipcMain.handle("vault-bootstrap", async (_, pathValue) => backendPost("/vault/bootstrap", { path: pathValue }));
@@ -374,6 +391,38 @@ ipcMain.handle("raw-watch-start", async (_, vaultPath) =>
 ipcMain.handle("raw-watch-stop", async () => backendPost("/ingest/raw/watch/stop", {}));
 
 ipcMain.handle("raw-watch-status", async () => backendGet("/ingest/raw/watch/status"));
+
+ipcMain.handle("review-list", async (_, vaultPath, status = "pending") =>
+  backendGet("/reviews", `?vault_path=${encodeURIComponent(vaultPath)}&status=${encodeURIComponent(status)}`)
+);
+
+ipcMain.handle("review-get", async (_, vaultPath, proposalId) =>
+  backendGet(`/reviews/${encodeURIComponent(proposalId)}`, `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
+
+ipcMain.handle("review-edit", async (_, vaultPath, proposalId, proposedContent) =>
+  backendPut(
+    `/reviews/${encodeURIComponent(proposalId)}`,
+    { proposed_content: proposedContent },
+    `?vault_path=${encodeURIComponent(vaultPath)}`
+  )
+);
+
+ipcMain.handle("review-approve", async (_, vaultPath, proposalId) =>
+  backendPost(`/reviews/${encodeURIComponent(proposalId)}/approve`, {}, `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
+
+ipcMain.handle("review-reject", async (_, vaultPath, proposalId) =>
+  backendPost(`/reviews/${encodeURIComponent(proposalId)}/reject`, {}, `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
+
+ipcMain.handle("review-approve-all", async (_, vaultPath, sourceRelativePath) =>
+  backendPost(
+    "/reviews/approve-all",
+    {},
+    `?vault_path=${encodeURIComponent(vaultPath)}&source_relative_path=${encodeURIComponent(sourceRelativePath)}`
+  )
+);
 
 app.whenReady().then(async () => {
   await startBackend();

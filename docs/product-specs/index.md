@@ -6,7 +6,8 @@ These specs define observable product behavior.
 
 1. [New User Onboarding](./new-user-onboarding.md)
 2. [File Processing](./file-processing.md)
-3. [Ask Experience](./ask-experience.md)
+3. [Review Workflow](./review-workflow.md)
+4. [Ask Experience](./ask-experience.md)
 
 ## Usage
 

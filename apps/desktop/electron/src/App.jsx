@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const LAST_VAULT_PATH_KEY = "local-llm-wiki:last-vault-path";
 
@@ -36,6 +36,23 @@ export function App() {
   const [watchStatus, setWatchStatus] = useState({ running: false });
   const [wikiGeneration, setWikiGeneration] = useState(null);
   const [eventsConnected, setEventsConnected] = useState(false);
+  const [reviewProposals, setReviewProposals] = useState([]);
+  const [selectedProposalId, setSelectedProposalId] = useState("");
+  const [selectedProposal, setSelectedProposal] = useState(null);
+  const [reviewEditorContent, setReviewEditorContent] = useState("");
+  const [reviewMessage, setReviewMessage] = useState("No pending proposals yet.");
+  const [reviewBusy, setReviewBusy] = useState(false);
+
+  const reviewSources = useMemo(() => {
+    const map = new Map();
+    reviewProposals.forEach((proposal) => {
+      if (!map.has(proposal.source_relative_path)) {
+        map.set(proposal.source_relative_path, []);
+      }
+      map.get(proposal.source_relative_path).push(proposal);
+    });
+    return Array.from(map.entries());
+  }, [reviewProposals]);
 
   function saveLastVaultPath(pathValue) {
     try {
@@ -75,6 +92,7 @@ export function App() {
     await refreshVaultStatus(selected.payload.vault_path);
     await refreshGroqStatus(selected.payload.vault_path);
     await refreshRawInbox(selected.payload.vault_path);
+    await refreshReviews(selected.payload.vault_path);
     await ensureRawWatcherRunning(selected.payload.vault_path);
     const warning = selected.payload.warning ? ` Warning: ${selected.payload.warning}` : "";
     setVaultMessage(`Restored previous vault.${warning}`);
@@ -124,7 +142,7 @@ export function App() {
 
   async function refreshVaultStatus(pathValue) {
     const desktopApi = window.desktopApi;
-    if (!desktopApi) return;
+    if (!desktopApi || !pathValue) return;
     const statusResult = await desktopApi.vaultStatus(pathValue);
     if (statusResult.ok && statusResult.payload) {
       setStatus({
@@ -194,6 +212,7 @@ export function App() {
       });
       await refreshGroqStatus(configured.payload.vault_path);
       await refreshRawInbox(configured.payload.vault_path);
+      await refreshReviews(configured.payload.vault_path);
       await ensureRawWatcherRunning(configured.payload.vault_path);
       saveLastVaultPath(configured.payload.vault_path);
       const warning = configured.payload.warning ? ` Warning: ${configured.payload.warning}` : "";
@@ -265,6 +284,47 @@ export function App() {
     setRawInboxSummary(result.payload.summary ?? null);
   }
 
+  async function refreshReviews(pathValue, keepSelected = true) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !pathValue) return;
+    const result = await desktopApi.reviewList(pathValue, "pending");
+    if (!result.ok || !result.payload) {
+      setReviewMessage(`Proposed updates unavailable: ${result.error ?? "Unknown error"}`);
+      setReviewProposals([]);
+      setSelectedProposal(null);
+      setSelectedProposalId("");
+      return;
+    }
+    const proposals = result.payload.proposals ?? [];
+    setReviewProposals(proposals);
+    if (proposals.length === 0) {
+      setSelectedProposal(null);
+      setSelectedProposalId("");
+      setReviewEditorContent("");
+      setReviewMessage("No pending proposals yet.");
+      return;
+    }
+    const preferredId =
+      keepSelected && selectedProposalId && proposals.some((item) => item.id === selectedProposalId)
+        ? selectedProposalId
+        : proposals[0].id;
+    await loadProposal(pathValue, preferredId);
+    setReviewMessage(`Loaded ${proposals.length} pending proposal${proposals.length === 1 ? "" : "s"}.`);
+  }
+
+  async function loadProposal(pathValue, proposalId) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !pathValue || !proposalId) return;
+    const result = await desktopApi.reviewGet(pathValue, proposalId);
+    if (!result.ok || !result.payload) {
+      setReviewMessage(`Failed to load proposal: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setSelectedProposalId(proposalId);
+    setSelectedProposal(result.payload);
+    setReviewEditorContent(result.payload.proposed_content ?? "");
+  }
+
   async function runRawIngest() {
     const desktopApi = window.desktopApi;
     if (!desktopApi || !vaultPath) {
@@ -281,12 +341,13 @@ export function App() {
     setWikiGeneration(result.payload.wiki_generation ?? null);
     const wikiSummary = result.payload.wiki_generation;
     const wikiSuffix = wikiSummary
-      ? ` wiki_pages=${wikiSummary.generated_page_count}, flashcards=${wikiSummary.generated_flashcard_count}, wiki_failures=${wikiSummary.failed_count}`
+      ? ` wiki_pages=${wikiSummary.generated_page_count}, flashcards=${wikiSummary.generated_flashcard_count}, proposals=${wikiSummary.proposed_update_count}, wiki_failures=${wikiSummary.failed_count}`
       : "";
     setRawMessage(
       `Ingest completed. processed=${result.payload.processed_count}, failed=${result.payload.failed_count}, pending_image=${result.payload.pending_image_count}${wikiSuffix}`
     );
     await refreshRawInbox(vaultPath);
+    await refreshReviews(vaultPath, false);
   }
 
   async function refreshWatchStatus() {
@@ -303,14 +364,14 @@ export function App() {
   async function ensureRawWatcherRunning(pathValue) {
     const desktopApi = window.desktopApi;
     if (!desktopApi || !pathValue) return;
-    const status = await desktopApi.rawWatchStatus();
+    const statusResult = await desktopApi.rawWatchStatus();
     if (
-      status.ok &&
-      status.payload &&
-      status.payload.running &&
-      status.payload.vault_path === pathValue
+      statusResult.ok &&
+      statusResult.payload &&
+      statusResult.payload.running &&
+      statusResult.payload.vault_path === pathValue
     ) {
-      setWatchStatus(status.payload);
+      setWatchStatus(statusResult.payload);
       return;
     }
     const started = await desktopApi.startRawWatch(pathValue);
@@ -343,17 +404,81 @@ export function App() {
     await refreshWatchStatus();
   }
 
+  async function saveEditedProposal() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath || !selectedProposal) return;
+    setReviewBusy(true);
+    const result = await desktopApi.reviewEdit(vaultPath, selectedProposal.id, reviewEditorContent);
+    setReviewBusy(false);
+    if (!result.ok || !result.payload) {
+      setReviewMessage(`Edit failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setSelectedProposal(result.payload);
+    setReviewEditorContent(result.payload.proposed_content);
+    setReviewMessage("Edited proposal saved.");
+    await refreshReviews(vaultPath);
+  }
+
+  async function approveProposal() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath || !selectedProposal) return;
+    setReviewBusy(true);
+    const result = await desktopApi.reviewApprove(vaultPath, selectedProposal.id);
+    setReviewBusy(false);
+    if (!result.ok || !result.payload) {
+      setReviewMessage(`Approve failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setSelectedProposal(result.payload);
+    if (result.payload.status === "conflicted") {
+      setReviewMessage(result.payload.last_error ?? "Proposal conflicted.");
+    } else {
+      setReviewMessage(`Approved update for ${result.payload.target_title}.`);
+    }
+    await refreshReviews(vaultPath, false);
+  }
+
+  async function rejectProposal() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath || !selectedProposal) return;
+    setReviewBusy(true);
+    const result = await desktopApi.reviewReject(vaultPath, selectedProposal.id);
+    setReviewBusy(false);
+    if (!result.ok || !result.payload) {
+      setReviewMessage(`Reject failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setReviewMessage(`Rejected update for ${result.payload.target_title}.`);
+    await refreshReviews(vaultPath, false);
+  }
+
+  async function approveAllForSource(sourceRelativePath) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath || !sourceRelativePath) return;
+    setReviewBusy(true);
+    const result = await desktopApi.reviewApproveAll(vaultPath, sourceRelativePath);
+    setReviewBusy(false);
+    if (!result.ok || !result.payload) {
+      setReviewMessage(`Approve all failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setReviewMessage(
+      `${result.payload.applied} applied, ${result.payload.conflicted} conflicted, ${result.payload.failed} failed for ${sourceRelativePath}.`
+    );
+    await refreshReviews(vaultPath, false);
+  }
+
   useEffect(() => {
     if (!vaultPath || !watchStatus.running) {
       return undefined;
     }
     let cancelled = false;
-    const socket = new WebSocket(
-      `ws://127.0.0.1:8765/ws/events?vault_path=${encodeURIComponent(vaultPath)}`
-    );
+    const socket = new WebSocket(`ws://127.0.0.1:8765/ws/events?vault_path=${encodeURIComponent(vaultPath)}`);
 
     let pollTimer = setInterval(() => {
       refreshRawInbox(vaultPath);
+      refreshReviews(vaultPath);
     }, 3000);
 
     socket.onopen = () => {
@@ -370,6 +495,7 @@ export function App() {
       if (!pollTimer) {
         pollTimer = setInterval(() => {
           refreshRawInbox(vaultPath);
+          refreshReviews(vaultPath);
         }, 3000);
       }
     };
@@ -379,12 +505,14 @@ export function App() {
       if (!pollTimer) {
         pollTimer = setInterval(() => {
           refreshRawInbox(vaultPath);
+          refreshReviews(vaultPath);
         }, 3000);
       }
     };
     socket.onmessage = () => {
       if (cancelled) return;
       refreshRawInbox(vaultPath);
+      refreshReviews(vaultPath);
     };
 
     return () => {
@@ -399,11 +527,12 @@ export function App() {
         // ignore
       }
     };
-  }, [vaultPath, watchStatus.running]);
+  }, [vaultPath, watchStatus.running, selectedProposalId]);
 
   const isDashboard = activeView === "Dashboard";
   const isSettings = activeView === "Settings";
   const isRawInbox = activeView === "Raw Inbox";
+  const isProposedUpdates = activeView === "Proposed Updates";
 
   return (
     <div className="app-shell">
@@ -429,6 +558,10 @@ export function App() {
             <span className={health.online ? "ok" : "error"}>{health.message}</span>
           </div>
           <div>
+            <strong>Watcher:</strong> {watchStatus.running ? "Running" : "Stopped"} /{" "}
+            {eventsConnected ? "Live events" : "Polling"}
+          </div>
+          <div>
             <strong>View:</strong> {activeView}
           </div>
         </header>
@@ -452,6 +585,7 @@ export function App() {
                 ({groqStatus.message})
               </p>
               <p><strong>Groq model:</strong> {groqStatus.model}</p>
+              <p><strong>Pending proposals:</strong> {reviewProposals.length}</p>
               <p>
                 <strong>Obsidian CLI:</strong> {status.obsidianCliAvailable ? "Available" : "Unavailable"}.
                 Core functionality works without it.
@@ -518,7 +652,7 @@ export function App() {
                   <p>
                     <strong>Wiki generation:</strong> sources={wikiGeneration.attempted_source_count},
                     pages={wikiGeneration.generated_page_count}, flashcards={wikiGeneration.generated_flashcard_count},
-                    failed={wikiGeneration.failed_count}
+                    proposals={wikiGeneration.proposed_update_count}, failed={wikiGeneration.failed_count}
                   </p>
                   {wikiGeneration.skipped_reason && <p>{wikiGeneration.skipped_reason}</p>}
                   {wikiGeneration.source_results?.length > 0 && (
@@ -528,7 +662,7 @@ export function App() {
                           <th>Source</th>
                           <th>Status</th>
                           <th>Candidates</th>
-                          <th>Generated</th>
+                          <th>Output</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -540,7 +674,12 @@ export function App() {
                               {(result.candidates ?? []).map((candidate) => candidate.title).join(", ") || "-"}
                             </td>
                             <td>
-                              {[...(result.generated_page_paths ?? []), result.flashcard_path].filter(Boolean).join(", ") || result.error_message || "-"}
+                              {[...(result.generated_page_paths ?? []), result.flashcard_path]
+                                .filter(Boolean)
+                                .join(", ") ||
+                                (result.proposed_updates ?? []).map((proposal) => proposal.target_title).join(", ") ||
+                                result.error_message ||
+                                "-"}
                             </td>
                           </tr>
                         ))}
@@ -577,7 +716,111 @@ export function App() {
               <p>Images are shown as <code>pending_image</code>. Image processing is not enabled yet.</p>
             </div>
           )}
-          {!isDashboard && !isSettings && !isRawInbox && (
+          {isProposedUpdates && (
+            <div className="review-layout">
+              <section className="review-list">
+                <div className="row">
+                  <button type="button" className="action-btn" onClick={() => refreshReviews(vaultPath, false)}>
+                    Refresh Proposals
+                  </button>
+                </div>
+                <p>{reviewMessage}</p>
+                {reviewSources.length === 0 && <p>No pending proposals.</p>}
+                {reviewSources.map(([sourceRelativePath, proposals]) => (
+                  <div key={sourceRelativePath} className="review-source-card">
+                    <div className="review-source-head">
+                      <div>
+                        <strong>{sourceRelativePath}</strong>
+                        <div className="muted">{proposals.length} proposal{proposals.length === 1 ? "" : "s"}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="nav-btn"
+                        disabled={reviewBusy}
+                        onClick={() => approveAllForSource(sourceRelativePath)}
+                      >
+                        Approve All
+                      </button>
+                    </div>
+                    <div className="stack">
+                      {proposals.map((proposal) => (
+                        <button
+                          key={proposal.id}
+                          type="button"
+                          className={proposal.id === selectedProposalId ? "proposal-btn active" : "proposal-btn"}
+                          onClick={() => loadProposal(vaultPath, proposal.id)}
+                        >
+                          <span>{proposal.target_title}</span>
+                          <span className="muted">{proposal.confidence || "pending"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </section>
+
+              <section className="review-detail">
+                {!selectedProposal && <p>Select a proposal to inspect the diff and proposed content.</p>}
+                {selectedProposal && (
+                  <div className="stack">
+                    <div className="review-summary">
+                      <div>
+                        <h3>{selectedProposal.target_title}</h3>
+                        <p><strong>Target:</strong> {selectedProposal.target_relative_path}</p>
+                        <p><strong>Source:</strong> {selectedProposal.source_relative_path}</p>
+                        <p><strong>Reason:</strong> {selectedProposal.reason}</p>
+                        <p><strong>Status:</strong> {selectedProposal.status}</p>
+                      </div>
+                      <div className="stack">
+                        <button type="button" className="action-btn" disabled={reviewBusy} onClick={saveEditedProposal}>
+                          Save Edit
+                        </button>
+                        <button type="button" className="action-btn success-btn" disabled={reviewBusy} onClick={approveProposal}>
+                          Approve
+                        </button>
+                        <button type="button" className="danger-btn" disabled={reviewBusy} onClick={rejectProposal}>
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                    {selectedProposal.source_citations?.length > 0 && (
+                      <div className="stack">
+                        <strong>Citations</strong>
+                        {selectedProposal.source_citations.map((citation, index) => (
+                          <code key={`${citation.locator}-${index}`}>{citation.locator}</code>
+                        ))}
+                      </div>
+                    )}
+                    <div className="diff-panel">
+                      <h4>Visual Diff</h4>
+                      <div className="diff-viewer">
+                        {(selectedProposal.diff ?? []).map((line, index) => (
+                          <div key={`${line.kind}-${index}`} className={`diff-line ${line.kind}`}>
+                            {line.text || " "}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="editor-grid">
+                      <div>
+                        <h4>Current Content</h4>
+                        <pre className="content-box">{selectedProposal.old_content}</pre>
+                      </div>
+                      <div>
+                        <h4>Proposed Content</h4>
+                        <textarea
+                          className="editor-box"
+                          value={reviewEditorContent}
+                          onChange={(event) => setReviewEditorContent(event.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
+          {!isDashboard && !isSettings && !isRawInbox && !isProposedUpdates && (
             <p>
               This is the Phase 0 UI shell placeholder for <strong>{activeView}</strong>.
             </p>

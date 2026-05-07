@@ -15,6 +15,8 @@ from llm_wiki_backend.wiki.markdown import (
     PAGE_DIRECTORIES,
     append_log,
     atomic_write_text,
+    extract_summary,
+    extract_title,
     render_flashcards,
     render_page,
     safe_markdown_filename,
@@ -29,6 +31,7 @@ from llm_wiki_backend.wiki.models import (
     generation_plan_schema,
     parse_generation_plan,
 )
+from llm_wiki_backend.wiki.review_service import create_update_proposals, find_related_pages, index_wiki_page
 
 PROMPT_PATH = Path(__file__).resolve().parents[5] / "packages" / "shared" / "prompts" / "wiki_generation.md"
 
@@ -38,6 +41,7 @@ def generate_wiki_for_pending_sources(vault_path: Path, provider: LLMProvider | 
     if active_provider is None:
         return WikiGenerationSummary(skipped_reason="Groq is not configured.")
 
+    ingest_run_id = str(uuid.uuid4())
     with connect_database(vault_path) as conn:
         rows = conn.execute(
             """
@@ -58,12 +62,13 @@ def generate_wiki_for_pending_sources(vault_path: Path, provider: LLMProvider | 
             (_vault_id(vault_path),),
         ).fetchall()
 
-        summary = WikiGenerationSummary(attempted_source_count=len(rows))
+        summary = WikiGenerationSummary(attempted_source_count=len(rows), ingest_run_id=ingest_run_id)
         for row in rows:
             result = _generate_for_source(
                 conn=conn,
                 vault_path=vault_path,
                 provider=active_provider,
+                ingest_run_id=ingest_run_id,
                 file_id=row["file_id"],
                 extraction_id=row["extraction_id"],
                 source_relative_path=row["relative_path"],
@@ -77,6 +82,7 @@ def generate_wiki_for_pending_sources(vault_path: Path, provider: LLMProvider | 
                 continue
             summary.processed_source_count += 1
             summary.generated_page_count += len(result.generated_page_paths)
+            summary.proposed_update_count += len(result.proposed_updates)
             if result.flashcard_path:
                 summary.generated_flashcard_count += 1
 
@@ -97,6 +103,7 @@ def _generate_for_source(
     conn,
     vault_path: Path,
     provider: LLMProvider,
+    ingest_run_id: str,
     file_id: str,
     extraction_id: str,
     source_relative_path: str,
@@ -113,6 +120,11 @@ def _generate_for_source(
         )
 
     try:
+        related_candidates = find_related_pages(
+            conn,
+            source_title=source_title,
+            extracted_text=extracted_text,
+        )
         payload = provider.complete_structured(
             system_prompt=_load_prompt(),
             user_prompt=_build_user_prompt(source_relative_path, source_title, extracted_text),
@@ -124,8 +136,13 @@ def _generate_for_source(
             vault_path=vault_path,
             extraction_id=extraction_id,
             source_relative_path=source_relative_path,
+            source_sha256=source_sha256,
+            source_file_id=file_id,
             source_title=source_title,
             plan=plan,
+            provider=provider,
+            related_candidates=related_candidates,
+            ingest_run_id=ingest_run_id,
         )
         return _mark_generated(conn, file_id=file_id, source_sha256=source_sha256, result=result)
     except (LLMOutputError, WikiGenerationError, OSError, ValueError) as exc:
@@ -141,8 +158,13 @@ def _write_generation_plan(
     vault_path: Path,
     extraction_id: str,
     source_relative_path: str,
+    source_sha256: str,
+    source_file_id: str,
     source_title: str | None,
     plan,
+    provider: LLMProvider,
+    related_candidates: list[dict[str, object]],
+    ingest_run_id: str,
 ) -> WikiSourceResult:
     previews: list[WikiCandidatePreview] = []
     generated_paths: list[str] = []
@@ -171,8 +193,8 @@ def _write_generation_plan(
         index_entries.append((candidate.page_type, candidate.title, candidate.summary))
         conn.execute(
             """
-            INSERT INTO wiki_pages(id, extraction_id, page_type, path, relative_path, sha256, created_at, updated_at, status)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO wiki_pages(id, extraction_id, page_type, path, relative_path, sha256, title, summary, created_at, updated_at, status)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(uuid.uuid4()),
@@ -181,11 +203,26 @@ def _write_generation_plan(
                 str(target_path),
                 rel_path,
                 sha256_text(content),
+                candidate.title,
+                candidate.summary,
                 _now_iso(),
                 _now_iso(),
                 "generated",
             ),
         )
+        page_row = conn.execute(
+            "SELECT id FROM wiki_pages WHERE relative_path = ? ORDER BY created_at DESC LIMIT 1",
+            (rel_path,),
+        ).fetchone()
+        if page_row is not None:
+            index_wiki_page(
+                conn,
+                wiki_page_id=page_row["id"],
+                relative_path=rel_path,
+                title=candidate.title,
+                summary=candidate.summary,
+                content=content,
+            )
 
     flashcard_path = None
     if plan.flashcards:
@@ -212,10 +249,30 @@ def _write_generation_plan(
         status="generated" if generated_paths or flashcard_path else "skipped",
     )
     status = "generated" if generated_paths or flashcard_path else "skipped"
+    proposed_updates = create_update_proposals(
+        conn,
+        vault_path=vault_path,
+        provider=provider,
+        source_file_id=source_file_id,
+        source_relative_path=source_relative_path,
+        source_sha256=source_sha256,
+        source_title=source_title,
+        extracted_text=conn.execute(
+            "SELECT extracted_text FROM extractions WHERE id = ?",
+            (extraction_id,),
+        ).fetchone()["extracted_text"]
+        or "",
+        candidates=related_candidates,
+        ingest_run_id=ingest_run_id,
+        model=getattr(provider, "_model", getattr(provider, "model", "review")),
+    )
+    if proposed_updates and status == "skipped":
+        status = "generated"
     return WikiSourceResult(
         source_path=source_relative_path,
         status=status,
         candidates=previews,
+        proposed_updates=proposed_updates,
         generated_page_paths=generated_paths,
         skipped_titles=skipped_titles,
         flashcard_path=flashcard_path,

@@ -90,9 +90,23 @@ CREATE TABLE wiki_pages (
   path TEXT NOT NULL,
   relative_path TEXT NOT NULL,
   sha256 TEXT,
+  title TEXT,
+  summary TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   status TEXT NOT NULL
+);
+```
+
+### `wiki_pages_fts` (FTS5)
+
+```sql
+CREATE VIRTUAL TABLE wiki_pages_fts USING fts5(
+  wiki_page_id UNINDEXED,
+  relative_path UNINDEXED,
+  title,
+  summary,
+  content
 );
 ```
 
@@ -102,10 +116,24 @@ CREATE TABLE wiki_pages (
 CREATE TABLE proposed_updates (
   id TEXT PRIMARY KEY,
   wiki_page_id TEXT NOT NULL,
+  source_file_id TEXT,
+  source_relative_path TEXT,
+  source_sha256 TEXT,
+  target_relative_path TEXT,
+  target_title TEXT,
   old_content TEXT NOT NULL,
   proposed_content TEXT NOT NULL,
+  reason TEXT,
+  confidence TEXT,
+  source_citations_json TEXT,
+  review_path TEXT,
+  ingest_run_id TEXT,
+  model TEXT,
+  target_sha256_at_creation TEXT,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  edited_at TEXT,
+  last_error TEXT,
   resolved_at TEXT
 );
 ```
@@ -157,6 +185,9 @@ CREATE INDEX idx_files_vault_relative_path ON files(vault_id, relative_path);
 CREATE INDEX idx_files_status ON files(processing_status);
 CREATE INDEX idx_extractions_file ON extractions(file_id);
 CREATE INDEX idx_chunks_extraction ON chunks(extraction_id);
+CREATE INDEX idx_wiki_pages_relative_path ON wiki_pages(relative_path);
+CREATE INDEX idx_proposed_updates_status ON proposed_updates(status);
+CREATE INDEX idx_proposed_updates_source ON proposed_updates(source_relative_path);
 ```
 
 ## `files.processing_status` values in use

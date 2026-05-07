@@ -43,3 +43,23 @@
 [07/05/2026 16:16:50] apps/desktop/backend/llm_wiki_backend/observability/logging.py:1 Improved colored log formatting with subsystem tags for clearer output.
 [07/05/2026 16:21:55] apps/desktop/electron/src/App.jsx:345 Fixed WebSocket fallback polling so it stops once the WS connection is open (prevents repeated inbox GETs).
 [07/05/2026 16:21:55] apps/desktop/backend/llm_wiki_backend/observability/logging.py:46 Suppressed uvicorn access logs at the logger level as a second-line noise reduction.
+[07/05/2026 17:05:00] packages/shared/prompts/wiki_generation.md:1 Updated wiki generation prompts for conciseness, source-grounding, and strict JSON validation.
+[07/05/2026 18:53:38] apps/desktop/backend/tests/test_phase4.py:36 Added phase 4 backend coverage for proposal creation, editing, approval, rejection, conflict handling, and approve-all behavior.
+[07/05/2026 18:53:38] apps/desktop/backend/llm_wiki_backend/wiki/models.py:42 Added structured proposal/update review models and phase-4 summary fields.
+[07/05/2026 18:53:38] apps/desktop/backend/llm_wiki_backend/db/service.py:7 Expanded SQLite schema and migration helpers for review proposals, wiki FTS, and proposal metadata.
+[07/05/2026 18:53:38] apps/desktop/backend/llm_wiki_backend/wiki/markdown.py:57 Added review-file rendering plus markdown title/summary extraction helpers for approved updates.
+[07/05/2026 18:53:38] apps/desktop/backend/llm_wiki_backend/observability/audit.py:16 Added durable audit recording to SQLite and `.llm-wiki/audit.jsonl`.
+[07/05/2026 18:53:38] apps/desktop/backend/llm_wiki_backend/wiki/review_service.py:29 Implemented FTS-backed related-page lookup, proposal persistence, diff building, approval/rejection flows, conflict detection, and index/log follow-up writes.
+[07/05/2026 18:53:38] apps/desktop/backend/llm_wiki_backend/wiki/service.py:39 Integrated phase-4 proposal generation into wiki ingest while preserving new-page generation.
+[07/05/2026 18:53:38] apps/desktop/backend/llm_wiki_backend/core/models.py:122 Added API models for proposal listing, editing, and approve-all responses.
+[07/05/2026 18:53:38] apps/desktop/backend/llm_wiki_backend/api/router/review_router.py:23 Added review API routes for listing, loading, editing, approving, rejecting, and bulk-approving proposals.
+[07/05/2026 18:53:38] apps/desktop/backend/llm_wiki_backend/api/router/__init__.py:7 Registered the review router with the backend API.
+[07/05/2026 18:53:38] apps/desktop/electron/electron/preload.mjs:18 Exposed review workflow IPC methods to the renderer.
+[07/05/2026 18:53:38] apps/desktop/electron/electron/main.mjs:344 Added Electron-side review API bridge handlers and PUT request support.
+[07/05/2026 18:53:38] apps/desktop/electron/src/App.jsx:15 Replaced the Proposed Updates placeholder with a working review queue, diff viewer, editor, and approve/reject actions.
+[07/05/2026 18:53:38] apps/desktop/electron/src/styles.css:69 Added layout and diff/editor styling for the Proposed Updates workflow.
+[07/05/2026 18:53:38] docs/product-specs/review-workflow.md:1 Added the canonical product spec for existing-page review proposals.
+[07/05/2026 18:53:38] docs/product-specs/index.md:7 Registered the new review workflow spec in the product-spec read order.
+[07/05/2026 18:53:38] docs/product-specs/file-processing.md:17 Updated file-processing behavior to distinguish direct new-page writes from review-gated existing-page updates.
+[07/05/2026 18:53:38] docs/design-docs/auto-write-safety.md:3 Updated the safety design note to reflect review-gated existing-page updates.
+[07/05/2026 18:53:38] docs/generated/db-schema.md:83 Regenerated the schema reference for wiki page FTS and expanded proposal metadata.
