@@ -20,11 +20,16 @@ from llm_wiki_backend.ingestion.repository import (
 )
 from llm_wiki_backend.ingestion.time_utils import now_iso, timestamp_iso
 from llm_wiki_backend.ingestion.types import FileSnapshot, ProcessSummary
+from llm_wiki_backend.observability.logging import get_logger
+from llm_wiki_backend.observability.events import EVENT_HUB
 from llm_wiki_backend.wiki.service import generate_wiki_for_pending_sources
 
+logger = get_logger(__name__)
 
 def scan_raw_files(vault_path: Path) -> ProcessSummary:
     discovered_count = 0
+    logger.info("Scanning Raw/ for files")
+    EVENT_HUB.publish("ingest_scan_started", {"vault_path": str(vault_path)})
     with connect_database(vault_path) as conn:
         vault_id_value = ensure_vault_row(conn, vault_path)
         for file_path in iter_raw_files(vault_path):
@@ -48,6 +53,7 @@ def scan_raw_files(vault_path: Path) -> ProcessSummary:
             if upserted:
                 discovered_count += 1
         conn.commit()
+    EVENT_HUB.publish("ingest_scan_finished", {"vault_path": str(vault_path), "discovered_count": discovered_count})
     return ProcessSummary(discovered_count=discovered_count)
 
 
@@ -56,6 +62,7 @@ def hash_discovered_files(vault_path: Path) -> ProcessSummary:
     skipped_count = 0
     pending_image_count = 0
 
+    logger.info("Hashing discovered files")
     with connect_database(vault_path) as conn:
         file_rows = conn.execute(
             """
@@ -118,6 +125,8 @@ def process_queued_files(vault_path: Path) -> ProcessSummary:
     failed_count = 0
     pending_image_count = 0
 
+    logger.info("Processing queued files")
+    EVENT_HUB.publish("ingest_process_started", {"vault_path": str(vault_path)})
     with connect_database(vault_path) as conn:
         rows = conn.execute(
             """
@@ -199,6 +208,15 @@ def process_queued_files(vault_path: Path) -> ProcessSummary:
                 failed_count += 1
 
         conn.commit()
+    EVENT_HUB.publish(
+        "ingest_process_finished",
+        {
+            "vault_path": str(vault_path),
+            "processed_count": processed_count,
+            "failed_count": failed_count,
+            "pending_image_count": pending_image_count,
+        },
+    )
 
     return ProcessSummary(
         processed_count=processed_count,
@@ -208,10 +226,20 @@ def process_queued_files(vault_path: Path) -> ProcessSummary:
 
 
 def ingest_raw_files(vault_path: Path) -> ProcessSummary:
+    logger.info("Running ingest (scan/hash/process/wiki)")
+    EVENT_HUB.publish("ingest_run_started", {"vault_path": str(vault_path)})
     scan = scan_raw_files(vault_path)
     hashed = hash_discovered_files(vault_path)
     processed = process_queued_files(vault_path)
     wiki_summary = generate_wiki_for_pending_sources(vault_path)
+    logger.info(
+        "Ingest complete processed=%s failed=%s pending_image=%s wiki_pages=%s wiki_failed=%s",
+        processed.processed_count,
+        processed.failed_count + wiki_summary.failed_count,
+        hashed.pending_image_count + processed.pending_image_count,
+        wiki_summary.generated_page_count,
+        wiki_summary.failed_count,
+    )
     return ProcessSummary(
         discovered_count=scan.discovered_count,
         queued_count=hashed.queued_count,
@@ -264,6 +292,7 @@ def process_single_path(vault_path: Path, file_path: Path) -> ProcessSummary:
     if is_protected_relative(relative):
         return ProcessSummary()
 
+    logger.info("Watcher ingest triggered path=%s", relative.as_posix())
     with connect_database(vault_path) as conn:
         vault_id_value = ensure_vault_row(conn, vault_path)
         stat = resolved.stat()

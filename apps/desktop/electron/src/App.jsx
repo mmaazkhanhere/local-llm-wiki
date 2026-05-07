@@ -35,6 +35,7 @@ export function App() {
   const [rawMessage, setRawMessage] = useState("No scan has run yet.");
   const [watchStatus, setWatchStatus] = useState({ running: false });
   const [wikiGeneration, setWikiGeneration] = useState(null);
+  const [eventsConnected, setEventsConnected] = useState(false);
 
   function saveLastVaultPath(pathValue) {
     try {
@@ -346,10 +347,58 @@ export function App() {
     if (!vaultPath || !watchStatus.running) {
       return undefined;
     }
-    const timer = setInterval(() => {
+    let cancelled = false;
+    const socket = new WebSocket(
+      `ws://127.0.0.1:8765/ws/events?vault_path=${encodeURIComponent(vaultPath)}`
+    );
+
+    let pollTimer = setInterval(() => {
       refreshRawInbox(vaultPath);
-    }, 1500);
-    return () => clearInterval(timer);
+    }, 3000);
+
+    socket.onopen = () => {
+      if (cancelled) return;
+      setEventsConnected(true);
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+    socket.onclose = () => {
+      if (cancelled) return;
+      setEventsConnected(false);
+      if (!pollTimer) {
+        pollTimer = setInterval(() => {
+          refreshRawInbox(vaultPath);
+        }, 3000);
+      }
+    };
+    socket.onerror = () => {
+      if (cancelled) return;
+      setEventsConnected(false);
+      if (!pollTimer) {
+        pollTimer = setInterval(() => {
+          refreshRawInbox(vaultPath);
+        }, 3000);
+      }
+    };
+    socket.onmessage = () => {
+      if (cancelled) return;
+      refreshRawInbox(vaultPath);
+    };
+
+    return () => {
+      cancelled = true;
+      setEventsConnected(false);
+      if (pollTimer) {
+        clearInterval(pollTimer);
+      }
+      try {
+        socket.close();
+      } catch {
+        // ignore
+      }
+    };
   }, [vaultPath, watchStatus.running]);
 
   const isDashboard = activeView === "Dashboard";

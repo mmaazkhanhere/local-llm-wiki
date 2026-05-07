@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llm_wiki_backend.ingestion.service import PROTECTED_FOLDERS, process_single_path
+from llm_wiki_backend.observability.events import EVENT_HUB
+from llm_wiki_backend.observability.logging import get_logger
+
+logger = get_logger("ingestion.watcher")
 
 
 @dataclass(frozen=True)
@@ -97,7 +101,15 @@ class RawWatcherManager:
                         continue
                     if now - changed_at < self._stabilize_seconds:
                         continue
+                    logger.info("Detected stable change path=%s", file_path)
                     process_single_path(self._vault_path, file_path)
+                    EVENT_HUB.publish(
+                        "raw_file_processed",
+                        {
+                            "path": str(file_path),
+                            "vault_path": str(self._vault_path),
+                        },
+                    )
                     self._pending.pop(file_path, None)
 
                 self._fingerprints = current

@@ -201,7 +201,16 @@ async function startBackend() {
 
   backendProcess = spawn(
     "uv",
-    ["run", "uvicorn", "llm_wiki_backend.main:app", "--host", "127.0.0.1", "--port", String(backendPort)],
+    [
+      "run",
+      "uvicorn",
+      "llm_wiki_backend.main:app",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(backendPort),
+      "--no-access-log"
+    ],
     {
       cwd: backendDir,
       stdio: ["ignore", "pipe", "pipe"],
