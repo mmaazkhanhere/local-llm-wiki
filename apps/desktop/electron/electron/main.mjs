@@ -2,6 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
+import net from "node:net";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,8 +17,118 @@ let mainWindow = null;
 let backendProcess = null;
 let stoppingBackend = false;
 
-function startBackend() {
+function backendPidFilePath() {
+  return path.join(app.getPath("userData"), "backend.pid");
+}
+
+async function writeBackendPid(pid) {
+  if (!pid) return;
+  try {
+    await fs.mkdir(app.getPath("userData"), { recursive: true });
+    await fs.writeFile(backendPidFilePath(), String(pid), "utf-8");
+  } catch {
+    // Best-effort only.
+  }
+}
+
+async function readBackendPid() {
+  try {
+    const contents = await fs.readFile(backendPidFilePath(), "utf-8");
+    const pid = Number.parseInt(contents.trim(), 10);
+    return Number.isFinite(pid) ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+async function clearBackendPid() {
+  try {
+    await fs.unlink(backendPidFilePath());
+  } catch {
+    // Ignore.
+  }
+}
+
+function isPortOpen(port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve(false);
+    }, 250);
+    socket.once("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    socket.connect(port, "127.0.0.1", () => {
+      clearTimeout(timer);
+      socket.end();
+      resolve(true);
+    });
+  });
+}
+
+async function stopBackend() {
+  if (!backendProcess || stoppingBackend) {
+    await clearBackendPid();
+    return;
+  }
+  stoppingBackend = true;
+  const pid = backendProcess.pid;
+
+  const waitForExit = new Promise((resolve) => {
+    backendProcess.once("exit", () => resolve());
+    backendProcess.once("close", () => resolve());
+  });
+
+  if (process.platform === "win32" && pid) {
+    const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      windowsHide: true,
+      stdio: "ignore"
+    });
+    killer.on("exit", async () => {
+      await waitForExit;
+      backendProcess = null;
+      stoppingBackend = false;
+      await clearBackendPid();
+    });
+    killer.on("error", async () => {
+      backendProcess?.kill();
+      await waitForExit;
+      backendProcess = null;
+      stoppingBackend = false;
+      await clearBackendPid();
+    });
+    return;
+  }
+
+  backendProcess.kill();
+  await waitForExit;
+  backendProcess = null;
+  stoppingBackend = false;
+  await clearBackendPid();
+}
+
+async function startBackend() {
   if (backendProcess) {
+    return;
+  }
+
+  const alreadyRunning = await isPortOpen(backendPort);
+  if (alreadyRunning) {
+    const stalePid = await readBackendPid();
+    if (stalePid) {
+      try {
+        process.kill(stalePid, "SIGTERM");
+      } catch {
+        // Not our process or not killable.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+  }
+
+  if (await isPortOpen(backendPort)) {
+    console.error(`[backend] port ${backendPort} is already in use; not starting a new backend`);
     return;
   }
 
@@ -29,6 +141,8 @@ function startBackend() {
       windowsHide: true
     }
   );
+
+  await writeBackendPid(backendProcess.pid);
 
   backendProcess.stdout.on("data", (chunk) => {
     const message = chunk.toString().trim();
@@ -47,38 +161,11 @@ function startBackend() {
   backendProcess.on("exit", (code) => {
     console.log(`[backend] exited with code ${code}`);
     backendProcess = null;
+    clearBackendPid();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("backend-exited", { code });
     }
   });
-}
-
-function stopBackend() {
-  if (!backendProcess || stoppingBackend) {
-    return;
-  }
-  stoppingBackend = true;
-  const pid = backendProcess.pid;
-  if (process.platform === "win32" && pid) {
-    const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
-      windowsHide: true,
-      stdio: "ignore"
-    });
-    killer.on("exit", () => {
-      backendProcess = null;
-      stoppingBackend = false;
-    });
-    killer.on("error", () => {
-      backendProcess?.kill();
-      backendProcess = null;
-      stoppingBackend = false;
-    });
-    return;
-  }
-
-  backendProcess.kill();
-  backendProcess = null;
-  stoppingBackend = false;
 }
 
 async function createWindow() {
@@ -104,6 +191,18 @@ async function createWindow() {
   } else {
     await mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
+}
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
 }
 
 ipcMain.handle("backend-health", async () => {
@@ -201,7 +300,7 @@ ipcMain.handle("raw-watch-stop", async () => backendPost("/ingest/raw/watch/stop
 ipcMain.handle("raw-watch-status", async () => backendGet("/ingest/raw/watch/status"));
 
 app.whenReady().then(async () => {
-  startBackend();
+  await startBackend();
   await createWindow();
 
   app.on("activate", async () => {
@@ -218,8 +317,15 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
-  stopBackend();
+app.on("before-quit", async (event) => {
+  if (stoppingBackend) {
+    return;
+  }
+  if (backendProcess) {
+    event.preventDefault();
+    await stopBackend();
+    app.quit();
+  }
 });
 
 process.on("SIGINT", () => {

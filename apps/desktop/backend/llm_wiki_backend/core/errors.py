@@ -8,3 +8,11 @@ class ConfigError(ValueError):
 
 class SecretStorageError(RuntimeError):
     pass
+
+
+class LLMOutputError(ValueError):
+    pass
+
+
+class WikiGenerationError(RuntimeError):
+    pass

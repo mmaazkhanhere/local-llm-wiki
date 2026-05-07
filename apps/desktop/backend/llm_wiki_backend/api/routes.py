@@ -38,6 +38,7 @@ from llm_wiki_backend.vault.service import (
     detect_obsidian_cli,
     validate_vault,
 )
+from llm_wiki_backend.wiki.service import generate_wiki_for_pending_sources
 
 router = APIRouter()
 
@@ -174,7 +175,11 @@ def raw_process(vault_path: str) -> IngestSummaryResponse:
     except VaultValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     summary = process_queued_files(vault)
-    return IngestSummaryResponse(**summary.__dict__)
+    wiki_summary = generate_wiki_for_pending_sources(vault)
+    payload = summary.__dict__.copy()
+    payload["failed_count"] = summary.failed_count + wiki_summary.failed_count
+    payload["wiki_generation"] = wiki_summary.model_dump()
+    return IngestSummaryResponse(**payload)
 
 
 @router.post("/ingest/raw/run", response_model=IngestSummaryResponse)

@@ -34,6 +34,7 @@ export function App() {
   const [rawInboxSummary, setRawInboxSummary] = useState(null);
   const [rawMessage, setRawMessage] = useState("No scan has run yet.");
   const [watchStatus, setWatchStatus] = useState({ running: false });
+  const [wikiGeneration, setWikiGeneration] = useState(null);
 
   function saveLastVaultPath(pathValue) {
     try {
@@ -273,10 +274,16 @@ export function App() {
     const result = await desktopApi.runRawIngest(vaultPath);
     if (!result.ok || !result.payload) {
       setRawMessage(`Raw ingest failed: ${result.error ?? "Unknown error"}`);
+      setWikiGeneration(null);
       return;
     }
+    setWikiGeneration(result.payload.wiki_generation ?? null);
+    const wikiSummary = result.payload.wiki_generation;
+    const wikiSuffix = wikiSummary
+      ? ` wiki_pages=${wikiSummary.generated_page_count}, flashcards=${wikiSummary.generated_flashcard_count}, wiki_failures=${wikiSummary.failed_count}`
+      : "";
     setRawMessage(
-      `Ingest completed. processed=${result.payload.processed_count}, failed=${result.payload.failed_count}, pending_image=${result.payload.pending_image_count}`
+      `Ingest completed. processed=${result.payload.processed_count}, failed=${result.payload.failed_count}, pending_image=${result.payload.pending_image_count}${wikiSuffix}`
     );
     await refreshRawInbox(vaultPath);
   }
@@ -457,6 +464,42 @@ export function App() {
                 </p>
               )}
               <p>{rawMessage}</p>
+              {wikiGeneration && (
+                <div className="stack">
+                  <p>
+                    <strong>Wiki generation:</strong> sources={wikiGeneration.attempted_source_count},
+                    pages={wikiGeneration.generated_page_count}, flashcards={wikiGeneration.generated_flashcard_count},
+                    failed={wikiGeneration.failed_count}
+                  </p>
+                  {wikiGeneration.skipped_reason && <p>{wikiGeneration.skipped_reason}</p>}
+                  {wikiGeneration.source_results?.length > 0 && (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Source</th>
+                          <th>Status</th>
+                          <th>Candidates</th>
+                          <th>Generated</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {wikiGeneration.source_results.map((result) => (
+                          <tr key={result.source_path}>
+                            <td>{result.source_path}</td>
+                            <td>{result.status}</td>
+                            <td>
+                              {(result.candidates ?? []).map((candidate) => candidate.title).join(", ") || "-"}
+                            </td>
+                            <td>
+                              {[...(result.generated_page_paths ?? []), result.flashcard_path].filter(Boolean).join(", ") || result.error_message || "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
               <div>
                 {rawInboxFiles.length === 0 && <p>No discovered files yet.</p>}
                 {rawInboxFiles.length > 0 && (

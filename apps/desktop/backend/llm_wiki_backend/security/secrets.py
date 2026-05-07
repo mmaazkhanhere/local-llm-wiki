@@ -22,6 +22,13 @@ def has_groq_key(vault_path: Path) -> bool:
     return _fallback_key_exists(vault_path)
 
 
+def load_groq_key(vault_path: Path) -> str | None:
+    keyring_value = _try_load_keyring_key()
+    if keyring_value:
+        return keyring_value
+    return _load_fallback_key(vault_path)
+
+
 def _try_save_keyring(api_key: str) -> bool:
     try:
         import keyring  # type: ignore
@@ -40,6 +47,18 @@ def _try_has_keyring_key() -> bool:
         return bool(saved)
     except Exception:
         return False
+
+
+def _try_load_keyring_key() -> str | None:
+    try:
+        import keyring  # type: ignore
+
+        saved = keyring.get_password(SERVICE_NAME, KEY_NAME)
+        if isinstance(saved, str) and saved.strip():
+            return saved
+    except Exception:
+        return None
+    return None
 
 
 def _save_encrypted_fallback(vault_path: Path, api_key: str) -> None:
@@ -64,3 +83,20 @@ def _fallback_key_exists(vault_path: Path) -> bool:
         return False
     value = payload.get("groq_api_key")
     return isinstance(value, str) and len(value.strip()) > 0
+
+
+def _load_fallback_key(vault_path: Path) -> str | None:
+    path = vault_path / ".llm-wiki" / "secrets.enc.json"
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = payload.get("groq_api_key")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return base64.b64decode(value.encode("ascii")).decode("utf-8")
+    except Exception:
+        return None

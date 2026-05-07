@@ -104,6 +104,7 @@ class IngestSummaryResponse(BaseModel):
     skipped_count: int = 0
     failed_count: int = 0
     pending_image_count: int = 0
+    wiki_generation: dict | None = None
 
 
 class RawInboxResponse(BaseModel):

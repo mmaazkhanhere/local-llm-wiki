@@ -10,6 +10,7 @@ from pathlib import Path
 from llm_wiki_backend.db.service import connect_database
 from llm_wiki_backend.ingestion.extractors import extract_file, supported_file_type
 from llm_wiki_backend.ingestion.types import FileSnapshot, ProcessSummary
+from llm_wiki_backend.wiki.service import generate_wiki_for_pending_sources
 
 PROTECTED_FOLDERS = {"wiki", ".llm-wiki", ".obsidian", ".git", ".trash"}
 
@@ -203,13 +204,15 @@ def ingest_raw_files(vault_path: Path) -> ProcessSummary:
     scan = scan_raw_files(vault_path)
     hashed = hash_discovered_files(vault_path)
     processed = process_queued_files(vault_path)
+    wiki_summary = generate_wiki_for_pending_sources(vault_path)
     return ProcessSummary(
         discovered_count=scan.discovered_count,
         queued_count=hashed.queued_count,
         skipped_count=hashed.skipped_count,
         pending_image_count=hashed.pending_image_count + processed.pending_image_count,
         processed_count=processed.processed_count,
-        failed_count=processed.failed_count,
+        failed_count=processed.failed_count + wiki_summary.failed_count,
+        wiki_generation=wiki_summary.model_dump(),
     )
 
 
@@ -274,12 +277,14 @@ def process_single_path(vault_path: Path, file_path: Path) -> ProcessSummary:
 
     hashed = hash_discovered_files(vault_path)
     processed = process_queued_files(vault_path)
+    wiki_summary = generate_wiki_for_pending_sources(vault_path)
     return ProcessSummary(
         queued_count=hashed.queued_count,
         skipped_count=hashed.skipped_count,
         processed_count=processed.processed_count,
-        failed_count=processed.failed_count,
+        failed_count=processed.failed_count + wiki_summary.failed_count,
         pending_image_count=hashed.pending_image_count + processed.pending_image_count,
+        wiki_generation=wiki_summary.model_dump(),
     )
 
 

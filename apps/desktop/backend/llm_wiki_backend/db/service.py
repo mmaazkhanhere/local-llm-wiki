@@ -11,6 +11,8 @@ def initialize_database(vault_path: Path) -> Path:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.executescript(_schema_sql())
         conn.executescript(_phase2_schema_sql())
+        _ensure_column(conn, "files", "wiki_generated_sha256", "TEXT")
+        _ensure_column(conn, "files", "wiki_generated_at", "TEXT")
         conn.commit()
     return db_path
 
@@ -135,3 +137,11 @@ def _phase2_schema_sql() -> str:
       line_end UNINDEXED
     );
     """
+
+
+def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, column_type: str) -> None:
+    existing = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    column_names = {row[1] for row in existing}
+    if column_name in column_names:
+        return
+    conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
