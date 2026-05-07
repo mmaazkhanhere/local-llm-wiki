@@ -1,275 +1,310 @@
-# Simple Wiki Coding & Architecture Instructions
+# LLM Wiki Coding Standard
 
-Write clean, boring, test-driven code. Optimize for correctness, safety, readability, and easy change. Build one feature at a time.
+Goal: clean, simple, production-ready code that is easy to change.
 
----
+Stack:
+- Desktop: Electron + React + Vite + TypeScript
+- Backend: Python + FastAPI + Pydantic
+- LLM: Groq behind `LLMProvider`
+- Storage: SQLite + migrations + FTS5
+- Files: Obsidian-compatible Markdown
 
-## 1. Core Rules
+## 1. Product Principle
 
-- Implement one feature per change.
-- Start every feature with a small test list.
-- Use TDD: red → green → refactor.
-- Keep functions small and names explicit.
-- Prefer simple data flow over clever abstractions.
-- Do not add architecture for hypothetical future needs.
-- Keep business logic separate from UI, APIs, filesystem, LLM providers, Git, and Obsidian CLI.
-- Treat LLM output as untrusted until validated.
+Build a Karpathy-style compiled wiki:
 
----
+Raw sources are immutable.
+Wiki pages are generated, reviewed, cited, and audited.
+Ask uses Wiki first, Raw second.
+LLM output is never trusted until validated.
 
-## 2. Project Safety Rules
+## 2. Architecture
 
-The app manages a user’s Obsidian vault. Safety is mandatory.
+Frontend:
+- renders UI only
+- calls typed API client only
+- never reads/writes vault files directly
+- never stores API keys
 
-- Never edit `Raw/`.
-- Never delete user files.
-- Never write outside `Wiki/` and `.llm-wiki/`.
-- Use atomic writes for Markdown files.
-- New wiki pages may be created automatically.
-- Updates to existing wiki pages require review/approval.
-- Every write must be recorded in the audit log.
-- API keys must be stored securely and never logged.
-- Raw source chunks are for verification/citation, not primary reasoning.
-- Ask must use compiled wiki pages first, raw sources second.
+Electron:
+- owns app window, tray, backend lifecycle, native dialogs
+- exposes minimal IPC
+- no business logic
 
----
+Backend:
+- owns vault validation, ingestion, retrieval, LLM calls, writes, audit logs
+- FastAPI routes call services only
+- domain logic is pure where possible
 
-## 3. Architecture Boundaries
+Database:
+- SQLite for app state, jobs, sources, chunks, wiki index, audit events
+- FTS5 before vector DB
+- migrations required for schema changes
 
-Use clear layers. Keep domain logic independent from infrastructure.
+## 3. Project Shape
 
 ```text
 apps/desktop/
-  electron/        React + Electron UI
-  backend/         Python FastAPI backend
+  electron/
+  renderer/
+  api-client/
+
+apps/backend/
+  app/
+    api/
+    core/
+    vault/
+    ingestion/
+    wiki/
+    retrieval/
+    llm/
+    jobs/
+    db/
+    security/
+    observability/
+  tests/
 
 packages/shared/
-  prompts/         shared prompt text
-  schema/          shared JSON schemas
-  markdown/        shared Markdown templates
+  prompts/
+  schemas/
+  markdown/
 ```
 
-Backend module boundaries:
+## 4. Dependency Rules
+Allowed:
 
+- api -> services
+- services -> repositories/interfaces
+- infrastructure -> domain models
+
+Forbidden:
+- React importing backend logic
+- FastAPI routes containing business logic
+- `core` importing FastAPI, Groq, Electron, Git, Obsidian, or real filesystem APIs
+- direct Groq calls outside llm/
+- direct vault writes outside vault/ or wiki/write_service.py
+
+
+## 5. Safety Rules
+
+Never:
+- edit Raw/
+- delete user files
+- write outside Wiki/ and .llm-wiki/
+- log API keys
+- let LLM choose paths unchecked
+- overwrite existing pages without review
+
+Always:
+- normalize and validate paths
+- use atomic writes
+- record every write in audit log
+- show diff before updating an existing page
+- keep raw source citations for generated claims
+- reject unsafe LLM output
+
+## 6. Backend Rules
+
+Python:
+- type hints everywhere
+- Pydantic models for API and LLM structured outputs
+- explicit exceptions for expected failures
+- graceful error handling and retry logics
+- pathlib.Path for paths
+- no hidden I/O in pure logic
+- AWLAYS split files around 250–350 lines when responsibilities diverge
+- a `config.py` file that will hold all the application wide constants and configurations
+- complete logging system in the backend that gives complete observability of the operations happening. Use colorama for different log levels
+
+Service pattern:
 ```text
-core/              pure workflow decisions
-api/               FastAPI routes only
-vault/             vault validation and path rules
-ingestion/         file extraction and chunking
-wiki/              page planning, links, index, log, writes
-retrieval/         SQLite FTS5 search and ranking
-llm/               provider interface and Groq adapter
-lint/              wiki health checks and safe auto-fixes
-db/                SQLite repositories and migrations
-git/               optional Git adapter
-obsidian/          optional Obsidian CLI adapter
-security/          keychain and secret handling
+plan -> validate -> diff -> approve -> atomic write -> audit -> reindex
 ```
+
+## 7. Frontend Rules
+
+React:
+- small resuable components
+- server state via TanStack Query or equivalent
+- local UI state only in components/hooks
+- typed API client generated from OpenAPI
+- clear loading, empty, error, review, and success states
+
+Screens:
+- Dashboard
+- Raw Inbox
+- Ingestion Jobs
+- Proposed Updates
+- Wiki Browser
+- Ask
+- Lint
+- Settings
+
+Electron:
+- minimal IPC
+- no filesystem mutation from renderer
+- backend health check on startup
+- graceful backend shutdown when the frontend is closed
+
+## 8. LLM Rules
+
+All LLM calls go through:
+``` python
+class LLMProvider:
+    def complete_structured(...)
+    def stream(...)
+```
+Rules:
+- model IDs live in config
+- prompts are versioned
+- outputs are schema-validated
+- invalid outputs fail closed
+- citations are required where source-backed claims exist
+- retries are bounded
+- streaming is optional, not architectural
+
+## 9. Jobs
+
+Long work must be a job:
+- ingest source
+- extract text
+- chunk/index
+- plan wiki update
+- generate page
+- lint wiki
+- rebuild search index
+
+Each job has:
+
+- id
+- status
+- progress
+- logs
+- error
+- created_at
+- finished_at
+- cancel support where safe
+
+## 10. Retrieval
+
+Default order:
+- Wiki FTS
+- Wiki backlinks/index pages
+- Raw chunk FTS for verification
+- LLM synthesis with citations
 
 Rules:
+- Wiki is primary
+- Raw is evidence
+- no answer without provenance when sources exist
+- store retrieval traces for debugging
 
-- `api/` should call services, not contain business logic.
-- `core/` should not import FastAPI, Electron, Groq, Git, Obsidian CLI, or real filesystem APIs.
-- Infrastructure should sit behind small interfaces.
-- Prefer dependency injection over globals.
-- Keep side effects at the edges.
+## 11. Testing
+- Use TDD approach for coding
+- Write tests before implementation
+- Use pytest for backend tests.
 
----
+Required tests depending on the feature implementation:
+### 1. Vault Safety
 
-## 4. TDD Workflow
+- rejects paths outside vault
+- rejects writes to `Raw/`
+- allows writes only to `Wiki/` and `.llm-wiki/`
+- requires approval before updating existing wiki pages
+- never allows delete operations
 
-For every feature:
+### 2. Wiki Page Logic
 
-1. Write the test list.
-2. Write one failing test.
-3. Implement the smallest code that passes.
-4. Refactor while tests stay green.
-5. Repeat until the feature is complete.
+- creates safe filename from title
+- rejects unsafe LLM-proposed paths
+- creates page plan for new page
+- creates diff plan for existing page
+- rejects uncited claims when sources are available
 
-Example test list:
+### 3. LLM Output Validation
 
-```text
-Feature: Create vault folders
-- creates Raw/, Wiki/, and .llm-wiki/
-- does not overwrite existing index.md
-- rejects non-directory vault path
-- writes nothing outside the vault
-```
+- accepts valid structured output
+- rejects invalid JSON
+- rejects missing required fields
+- rejects unsafe target path
+- rejects output that violates citation rules
 
-A feature is done only when:
+### 4. Ingestion Logic
 
-- tests cover normal and edge cases,
-- lint/type checks pass,
-- code is refactored,
-- behavior is small and reviewable.
+- detects duplicate files by hash
+- detects changed file with same name
+- chunks text under max size
+- preserves source id and chunk order
+- ignores generated `Wiki/` files as raw sources
 
----
+### 5. Retrieval / Ask Logic
 
-## 5. Testing Rules
+- ranks Wiki results before Raw results
+- uses Raw only as supporting evidence
+- removes duplicate results
+- keeps context under budget
+- returns citations with selected context
 
-Use many fast unit tests, fewer integration tests, and very few end-to-end tests.
+### 6. Audit Logic
 
-```text
-Unit tests:
-  Pure logic, no network, no real Groq, no real Obsidian vault.
+- creates audit event for every write plan
+- includes action, path, timestamp, actor, and hash
+- redacts secrets from audit/log output
+- rejects write plan without audit event
 
-Integration tests:
-  SQLite, temp directories, Markdown writes, parsers.
+### 7. Job State Logic
 
-End-to-end tests:
-  Critical flows only.
-```
+- supports `queued -> running -> succeeded`
+- supports `running -> failed`
+- supports `running -> cancelled`
+- rejects invalid state transitions
+- keeps progress between `0` and `100`
 
-Required test areas:
+### Non Unit tests
+- actual atomic file replacement
+- real SQLite FTS5 ranking
+- real migration execution
+- real Markdown write/read
+- real PDF/text extraction
+- FastAPI route behavior
+- Electron app startup
 
-- vault path validation
-- Raw/Wiki write boundaries
-- hash-based file detection
-- file extraction
-- SQLite FTS5 indexing
-- wiki page creation
-- proposed update diffs
-- audit logging
-- citation formatting
-- lint checks
-- Ask retrieval order
-- Groq adapter with mocked responses
 
-Never call real Groq, real Obsidian CLI, or real user vaults in tests.
+### 8. Frontend Logic
 
----
+- shows loading, error, empty, and success states
+- disables approve/reject while request is pending
+- displays diff before approval
+- never calls filesystem APIs directly
+- never displays full API key
 
-## 6. Python Backend Rules
 
-- Use type hints everywhere.
-- Use Pydantic models for API and structured LLM outputs.
-- Keep functions short and single-purpose.
-- Avoid hidden I/O in domain functions.
-- Use `pathlib.Path` for paths.
-- Validate every path stays inside the selected vault.
-- Use explicit exceptions for expected failures.
-- Keep prompts versioned and testable.
-- Parse and validate LLM responses before writing files.
-- Split a Python file when it starts doing more than one clear responsibility or becomes hard to navigate, test, or reuse.
-- If your Python file is getting long (e.g. > 500–700 lines), split it.
-
-Good pattern:
-
-```text
-plan update → validate update → show diff → approve → atomic write → audit
-```
-
-Bad pattern:
-
-```text
-LLM response → directly overwrite Markdown
-```
-
----
-
-## 7. React/Electron Rules
-
-- Keep UI components small.
-- Keep business logic in the backend, not React.
-- Use typed API clients.
-- Show clear loading, error, pending, and review states.
-- Never let the frontend write directly to the vault.
-- Diff review must be explicit and easy to understand.
-- Prefer simple screens over dense dashboards.
-
-Main UI areas:
-
-```text
-Dashboard
-Raw Inbox
-Proposed Updates
-Wiki Browser
-Ask
-Lint
-Settings
-```
-
----
-
-## 8. LLM Coding Rules
-
-- LLM calls must go through `LLMProvider`.
-- Do not hardcode Groq throughout the codebase.
-- Keep model IDs in config.
-- Validate structured outputs with schemas.
-- Reject outputs that violate path, citation, or page-type rules.
-- Never trust the LLM to choose write paths without validation.
-- All generated claims should cite raw sources when practical.
-
----
-
-## 9. SQLite Rules
-
-- Use migrations.
-- Keep writes transactional.
-- Use FTS5 for wiki and raw chunk search.
-- Wiki search is primary.
-- Raw chunk search is secondary for verification.
-- Do not store secrets in SQLite.
-- Do not require committing `app.db` to Git.
-
----
-
-## 10. Commit Discipline
-
-Each commit should represent one concept.
-
-Good commits:
-
-```text
-feat(vault): create required folders
-feat(ingestion): extract text from pdf files
-feat(wiki): create concept page from ingest plan
-test(retrieval): verify wiki-first ask ranking
-```
-
-Avoid commits that mix unrelated features, refactors, UI polish, and bug fixes.
-
-Before merging:
-
-```text
-- tests pass
+## 12. Definition of Done
+A change is done only when:
+- one feature only
+- tests added first or alongside code
+- unit/integration tests pass
 - type checks pass
 - lint passes
-- no real secrets in logs/config
-- no writes outside allowed folders
-- no unrelated refactors
-```
+- no unrelated refactor
+- no new global state
+- no direct unsafe file writes
+- no direct Groq calls outside provider
+- docs updated if behavior changed
 
----
+## 13. Security Rules
 
-## 11. Anti-Patterns
+- Do not log secrets (API keys, tokens, etc.).
+- Do not store secrets in plaintext in the codebase.
+- Use environment variables for sensitive configuration.
+- Encrypt sensitive data at rest when applicable.
+- Implement proper input validation to prevent injection attacks.
+- Use prepared statements or ORMs for database operations.
 
-Do not:
+## 14. Error Handling
 
-- build a plugin system early,
-- add vector DB before SQLite FTS5 is proven insufficient,
-- make the frontend responsible for core logic,
-- let LLM output directly modify files,
-- mix ingestion, retrieval, UI, and Git in one module,
-- create huge concept pages,
-- write uncited claims when a source is available,
-- process generated `Wiki/` files as raw sources,
-- test against real user data.
-
----
-
-## 12. Implementation Style
-
-Default to the simplest working design:
-
-```text
-small feature
-small test list
-small failing test
-small implementation
-small refactor
-small commit
-```
-
-The codebase should feel easy for a senior engineer to review and safe for an AI coding agent to modify.
+- Use explicit exception types instead of generic Exception.
+- Never swallow exceptions without logging or handling them.
+- Provide meaningful error messages to the user.
+- Use proper retry logic with exponential backoff for network operations.
+- Handle gracefully the cases when the LLM is not available, providing the user with alternative options

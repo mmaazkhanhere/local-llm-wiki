@@ -617,30 +617,48 @@ Phase 3 is complete when:
 
 ## Goal
 
-Allow the app to improve existing wiki pages, but only after user approval.
+Allow the app to safely improve existing wiki pages when new, updated, versioned, removed, or weakened raw sources affect already-compiled knowledge.
+
+When a new or changed raw source affects existing wiki pages, the app must not immediately rewrite those pages.
+
+Instead, it must:
+
+1. Detect which existing wiki pages are related to the source.
+2. Decide whether the source creates a meaningful knowledge change.
+3. Generate proposed updates for affected pages.
+4. Store proposed updates without modifying the original Markdown files.
+5. Show the user a visual diff.
+6. Let the user approve or reject each proposal.
+7. Apply only approved updates.
+8. Leave rejected updates with no side effects.
+9. Audit every proposal, decision, and file write.
+
+The files that requires review/proposal are placed in /Reviews folder
 
 ---
 
 ## Feature 4.1 — Detect related existing pages
 
-Find existing wiki pages related to new source content.
+When new file is added to /raw folder, find existing wiki pages related to new source content. If not, generate new wiki pages. do not update unnrelated pages. record why each page was selected
 
 ### Complete when
 
 * App searches existing Wiki pages using FTS5.
-* Related pages are ranked.
+* App ranks candidate pages.
 * App avoids unrelated updates.
 * Tests use fixture wiki pages.
+* Candidates are filtered before review is generated for each file
 
 ---
 
 ## Feature 4.2 — Generate proposed update
 
-Generate a proposed replacement or patch for an existing page.
+If there are candidates that needs update then for each related page, generate a proposed update. The page is created in Review folder as diff. Store the proposed update in SQLite.\
+Existing page must not be modified without approval. Proposal must explain why the update is needed. The proposal must cite the source
 
 ### Complete when
 
-* Existing page is not modified directly.
+* Original markdown files are unchanged.
 * Proposed update is stored in `.llm-wiki/cache/proposed-updates/` or SQLite.
 * Proposal includes reason for change.
 * Proposal includes source citation.
@@ -650,24 +668,57 @@ Generate a proposed replacement or patch for an existing page.
 
 ## Feature 4.3 — Show visual diff
 
-Add diff viewer in Proposed Updates screen.
+Add diff viewer in Proposed Updates screen where user can compare the previous and updated version. Show all the proposed changes in red and green color.
+For each update, the user should see the source file, target wiki page, reason for update, current content, proposed content and visual diff. 
+The user can approve, reject or leave it as pending (do not process)
+
+- After user clicks accept, the page is updated with new content. 
+- Rejecting must not change any wiki file
+- User must be able to understand what will change before approving
 
 ### Complete when
 
 * User can see current page and proposed version.
-* Added/removed/changed content is visible.
+* The diff viewer shows added/removed/changed content with colors.
 * Source citation is visible.
 * User can reject without side effects.
+* Tests verify rejected proposals do not write files.
 
 ---
 
-## Feature 4.4 — Approve one update
+## Feature 4.4 - Edit Proposed Update
+All the user to modify the generated proposal/update before accepting. The user should see an option to edit the proposed update, clicking that will open the proposed update in a text editor with current and proposed content. User can edit the proposed content. 
+
+### Complete when
+
+* User can edit the proposed update.
+* Edited proposal is persisted.
+* Accepting an edited proposal writes the edited version.
+* Rejecting edited proposal does not write files.
+* Tests verify edit + accept behavior.
+
+---
+
+## Feature 4.5 — Approve one update
 
 Allow approving one proposed update.
+
+### Conflict rule
+If target file changes after proposal was created, do not write. instead show 
+```text
+⚠️ Conflict: Target page was updated by another process after this proposal was generated. Approve again to regenerate and apply.
+
+Source: 
+Original target: 
+Updated target: 
+
+Regenerate and apply?
+```
 
 ### Complete when
 
 * Approved update writes to the target Markdown file.
+* Mechanism to prevent unsafe write
 * Audit event is recorded.
 * index.md/log.md update if needed.
 * Rejected updates do not write files.
@@ -675,29 +726,95 @@ Allow approving one proposed update.
 
 ---
 
-## Feature 4.5 — Approve all updates
+## Feature 4.6 — Approve all updates
 
-Allow approving all proposed updates from an ingest run.
+Allow user to approve all pending proposals for one ingest run or source. Apply each proosal independently and if one fails, continue with others
+Audit each write separately. Do not corrupt other updates. Show result per proposal (success/failure)
+
+
+Example result:
+```text
+7 applied
+2 skipped due to hash conflict
+1 failed due to filesystem error
+```
 
 ### Complete when
 
 * User can approve all pending updates for a source.
 * Each write is audited.
+* Partial failure is handled safely.
 * Failure on one update does not corrupt others.
 * UI shows success/error state.
 
 ---
 
-## Feature 4.6 — Audit every write
+## Feature 4.7 — Audit every write
 
 Write audit records.
+Write audit events to both:
+```text
+SQLite
+.llm-wiki/audit.jsonl
+```
+Audit these events:
+
+```text
+proposal_created
+proposal_approved
+proposal_rejected
+proposal_conflicted
+proposal_failed
+target_file_written
+index_updated
+log_updated
+```
+
+Audit record must include
+```text
+timestamp
+event_type
+proposal_id
+ingest_run_id
+source_file
+source_id
+source_version
+target_file
+action
+model
+old_hash
+new_hash
+status
+Complete when
+Every proposal lifecycle event is audited.
+Every file write is audited.
+Audit exists in SQLite and JSONL.
+Tests verify audit output.
+```
+
+## Feature 4.8 - Reject Update and remove from review
+
+Allow user to reject updates. The proposal is marked rejected and timestamp rejection is stored. Do not modfiy target markdown file and append audit event with action rejected
+
 
 ### Complete when
 
-* Every generated file write creates an audit event.
-* Audit includes timestamp, source file, target file, action, and model.
-* Audit is written to SQLite and `.llm-wiki/audit.jsonl`.
-* Tests verify audit output.
+* User can reject updates.
+* Rejected updates are removed from review.
+* Audit event is recorded.
+* Rejected proposal no longer appears in default pending list.
+* Tests verify rejected updates do not write files.
+
+
+## Feature 4.9 - Update index.md and log.md
+After approved updates, update index.md and log.md if needed. Do not update index/log for rejected proposals. Audit index/log writes.
+
+### Complete when
+
+* index.md and log.md are updated after approved updates.
+* index.md and log.md are not updated for rejected proposals.
+* Audit event is recorded.
+* Tests verify index.md and log.md update behavior.
 
 ---
 
@@ -706,13 +823,22 @@ Write audit records.
 Phase 4 is complete when:
 
 ```text
-- Existing related pages are detected.
-- Proposed updates are generated without modifying files.
+- Source identity and versions are tracked.
+- Source updates are detected by hash.
+- Meaningful source changes are summarized.
+- Related existing wiki pages are found using FTS5.
+- Unrelated pages are avoided.
+- Proposed updates are generated without modifying wiki files.
+- Proposals include reason, citation, target file, affected claims, confidence, and update type.
 - User can view visual diffs.
 - User can approve one update.
-- User can approve all updates.
-- Rejected updates make no changes.
-- Every write is audited.
+- User can reject one update.
+- User can approve all updates from an ingest run.
+- Rejected updates make no file changes.
+- Hash conflicts prevent unsafe writes.
+- Removed or weakened evidence creates provenance/confidence proposals.
+- index.md and log.md update only after approved writes.
+- Every decision and write is audited.
 - Tests pass.
 ```
 
