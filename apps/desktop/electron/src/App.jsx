@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 const LAST_VAULT_PATH_KEY = "local-llm-wiki:last-vault-path";
 
@@ -42,17 +42,6 @@ export function App() {
   const [reviewEditorContent, setReviewEditorContent] = useState("");
   const [reviewMessage, setReviewMessage] = useState("No pending proposals yet.");
   const [reviewBusy, setReviewBusy] = useState(false);
-
-  const reviewSources = useMemo(() => {
-    const map = new Map();
-    reviewProposals.forEach((proposal) => {
-      if (!map.has(proposal.source_relative_path)) {
-        map.set(proposal.source_relative_path, []);
-      }
-      map.get(proposal.source_relative_path).push(proposal);
-    });
-    return Array.from(map.entries());
-  }, [reviewProposals]);
 
   function saveLastVaultPath(pathValue) {
     try {
@@ -295,7 +284,11 @@ export function App() {
       setSelectedProposalId("");
       return;
     }
-    const proposals = result.payload.proposals ?? [];
+    const proposals = (result.payload.proposals ?? []).slice().sort((left, right) => {
+      const leftKey = `${left.target_title ?? ""}`.toLowerCase();
+      const rightKey = `${right.target_title ?? ""}`.toLowerCase();
+      return leftKey.localeCompare(rightKey);
+    });
     setReviewProposals(proposals);
     if (proposals.length === 0) {
       setSelectedProposal(null);
@@ -303,6 +296,11 @@ export function App() {
       setReviewEditorContent("");
       setReviewMessage("No pending proposals yet.");
       return;
+    }
+    if (selectedProposalId && !proposals.some((item) => item.id === selectedProposalId)) {
+      setSelectedProposalId("");
+      setSelectedProposal(null);
+      setReviewEditorContent("");
     }
     const preferredId =
       keepSelected && selectedProposalId && proposals.some((item) => item.id === selectedProposalId)
@@ -323,6 +321,28 @@ export function App() {
     setSelectedProposalId(proposalId);
     setSelectedProposal(result.payload);
     setReviewEditorContent(result.payload.proposed_content ?? "");
+  }
+
+  function removeProposalFromList(proposalId) {
+    setReviewProposals((current) => current.filter((item) => item.id !== proposalId));
+    if (selectedProposalId === proposalId) {
+      setSelectedProposalId("");
+      setSelectedProposal(null);
+      setReviewEditorContent("");
+    }
+  }
+
+  function updateProposalInList(updatedProposal) {
+    if (!updatedProposal?.id) return;
+    setReviewProposals((current) => {
+      const next = current.map((item) => (item.id === updatedProposal.id ? { ...item, ...updatedProposal } : item));
+      next.sort((left, right) => {
+        const leftKey = `${left.target_title ?? ""}`.toLowerCase();
+        const rightKey = `${right.target_title ?? ""}`.toLowerCase();
+        return leftKey.localeCompare(rightKey);
+      });
+      return next;
+    });
   }
 
   async function runRawIngest() {
@@ -416,6 +436,7 @@ export function App() {
     }
     setSelectedProposal(result.payload);
     setReviewEditorContent(result.payload.proposed_content);
+    updateProposalInList(result.payload);
     setReviewMessage("Edited proposal saved.");
     await refreshReviews(vaultPath);
   }
@@ -431,10 +452,12 @@ export function App() {
       return;
     }
     setSelectedProposal(result.payload);
-    if (result.payload.status === "conflicted") {
-      setReviewMessage(result.payload.last_error ?? "Proposal conflicted.");
-    } else {
+    if (result.payload.status === "approved") {
+      removeProposalFromList(result.payload.id);
       setReviewMessage(`Approved update for ${result.payload.target_title}.`);
+    } else {
+      updateProposalInList(result.payload);
+      setReviewMessage(result.payload.last_error ?? `Approve did not apply (status=${result.payload.status}).`);
     }
     await refreshReviews(vaultPath, false);
   }
@@ -449,6 +472,7 @@ export function App() {
       setReviewMessage(`Reject failed: ${result.error ?? "Unknown error"}`);
       return;
     }
+    removeProposalFromList(result.payload.id);
     setReviewMessage(`Rejected update for ${result.payload.target_title}.`);
     await refreshReviews(vaultPath, false);
   }
@@ -725,38 +749,30 @@ export function App() {
                   </button>
                 </div>
                 <p>{reviewMessage}</p>
-                {reviewSources.length === 0 && <p>No pending proposals.</p>}
-                {reviewSources.map(([sourceRelativePath, proposals]) => (
-                  <div key={sourceRelativePath} className="review-source-card">
-                    <div className="review-source-head">
-                      <div>
-                        <strong>{sourceRelativePath}</strong>
-                        <div className="muted">{proposals.length} proposal{proposals.length === 1 ? "" : "s"}</div>
-                      </div>
+                {reviewProposals.length === 0 && <p>No pending proposals.</p>}
+                {reviewProposals.length > 0 && (
+                  <div className="stack">
+                    {reviewProposals.map((proposal) => (
                       <button
+                        key={proposal.id}
                         type="button"
-                        className="nav-btn"
-                        disabled={reviewBusy}
-                        onClick={() => approveAllForSource(sourceRelativePath)}
+                        className={proposal.id === selectedProposalId ? "proposal-btn active" : "proposal-btn"}
+                        onClick={() => loadProposal(vaultPath, proposal.id)}
                       >
-                        Approve All
+                        <span>
+                          <strong>{proposal.target_title}</strong>
+                          <div className="muted">{proposal.target_relative_path}</div>
+                          <div className="muted">Source: {proposal.source_relative_path}</div>
+                          {proposal.status === "conflicted" && (
+                            <div className="muted">Conflict: target changed since proposal creation</div>
+                          )}
+                          {proposal.last_error && <div className="muted">Last error: {proposal.last_error}</div>}
+                        </span>
+                        <span className="muted">{proposal.confidence || proposal.status || "pending"}</span>
                       </button>
-                    </div>
-                    <div className="stack">
-                      {proposals.map((proposal) => (
-                        <button
-                          key={proposal.id}
-                          type="button"
-                          className={proposal.id === selectedProposalId ? "proposal-btn active" : "proposal-btn"}
-                          onClick={() => loadProposal(vaultPath, proposal.id)}
-                        >
-                          <span>{proposal.target_title}</span>
-                          <span className="muted">{proposal.confidence || "pending"}</span>
-                        </button>
-                      ))}
-                    </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </section>
 
               <section className="review-detail">
@@ -770,6 +786,7 @@ export function App() {
                         <p><strong>Source:</strong> {selectedProposal.source_relative_path}</p>
                         <p><strong>Reason:</strong> {selectedProposal.reason}</p>
                         <p><strong>Status:</strong> {selectedProposal.status}</p>
+                        {selectedProposal.last_error && <p><strong>Last error:</strong> {selectedProposal.last_error}</p>}
                       </div>
                       <div className="stack">
                         <button type="button" className="action-btn" disabled={reviewBusy} onClick={saveEditedProposal}>
@@ -780,6 +797,14 @@ export function App() {
                         </button>
                         <button type="button" className="danger-btn" disabled={reviewBusy} onClick={rejectProposal}>
                           Reject
+                        </button>
+                        <button
+                          type="button"
+                          className="nav-btn"
+                          disabled={reviewBusy}
+                          onClick={() => approveAllForSource(selectedProposal.source_relative_path)}
+                        >
+                          Approve All From Source
                         </button>
                       </div>
                     </div>

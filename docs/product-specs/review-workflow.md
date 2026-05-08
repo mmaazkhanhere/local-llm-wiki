@@ -6,16 +6,18 @@ Protect existing wiki pages when new or changed raw sources would modify already
 
 ## Observable Behavior
 
-1. ingest may still create brand-new wiki pages immediately
-2. ingest must not rewrite an existing wiki page directly
-3. the app finds related existing pages from the new source
-4. the app stores a proposal with reason, citation, current content, proposed content, and diff
-5. the proposal appears in the `Proposed Updates` screen and in `Wiki/Reviews/`
-6. the user can edit, approve, reject, or approve all proposals for one source
-7. approval writes the target page atomically and updates related index or log entries when needed
-8. rejection leaves the target wiki page unchanged
-9. if the target page changed after proposal creation, the app marks the proposal as conflicted and refuses the write
-10. every proposal lifecycle event and approved write is audited in SQLite and `.llm-wiki/audit.jsonl`
+1. ingest must not rewrite an existing wiki page directly
+2. the app ranks existing-page candidates using exact title matching and FTS5 search
+3. the app runs an LLM coverage check using `Wiki/index.md` plus ranked candidates
+4. if coverage is `covered` or `unsure`, ingest creates update proposals (review required) and does not create new wiki pages for that source
+5. if coverage is `not_covered`, ingest may create brand-new wiki pages immediately
+6. the app stores a proposal with reason, citation, current content, proposed content, and diff
+7. the proposal appears in the `Proposed Updates` screen and in `Wiki/Reviews/`
+8. the user can edit, approve, reject, or approve all proposals for one source
+9. approval writes the target page atomically and updates related index or log entries when needed
+10. rejection leaves the target wiki page unchanged
+11. if the target page changed after proposal creation, the app marks the proposal as conflicted and refuses the write
+12. every proposal lifecycle event and approved write is audited in SQLite and `.llm-wiki/audit.jsonl`
 
 ## Default Pending View
 

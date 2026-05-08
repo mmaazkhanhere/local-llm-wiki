@@ -285,3 +285,33 @@ def test_phase4_approve_all_updates_each_proposal_independently(monkeypatch) -> 
     finally:
         client.post("/ingest/raw/watch/stop")
         shutil.rmtree(vault_path, ignore_errors=True)
+
+
+def test_phase4_approve_fails_closed_when_proposed_content_is_invalid(monkeypatch) -> None:
+    root = Path(__file__).resolve().parents[1] / ".test-work"
+    root.mkdir(parents=True, exist_ok=True)
+    vault_path = root / f"vault-{uuid.uuid4().hex}"
+    vault_path.mkdir(parents=True, exist_ok=False)
+    try:
+        payload, target_page = _seed_proposal(vault_path, monkeypatch)
+        proposal_id = payload["wiki_generation"]["source_results"][0]["proposed_updates"][0]["proposal_id"]
+
+        original = target_page.read_text(encoding="utf-8")
+        invalid_content = "No title header here.\n\nJust text.\n"
+
+        edit_response = client.put(
+            f"/reviews/{proposal_id}",
+            params={"vault_path": str(vault_path)},
+            json={"proposed_content": invalid_content},
+        )
+        assert edit_response.status_code == 200
+
+        approve_response = client.post(f"/reviews/{proposal_id}/approve", params={"vault_path": str(vault_path)})
+        assert approve_response.status_code == 200
+        approved_payload = approve_response.json()
+        assert approved_payload["status"] == "pending"
+        assert "missing a top-level title" in (approved_payload["last_error"] or "")
+        assert target_page.read_text(encoding="utf-8") == original
+    finally:
+        client.post("/ingest/raw/watch/stop")
+        shutil.rmtree(vault_path, ignore_errors=True)

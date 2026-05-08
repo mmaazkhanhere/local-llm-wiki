@@ -19,11 +19,90 @@ from llm_wiki_backend.wiki.markdown import (
 )
 from llm_wiki_backend.wiki.models import ProposedUpdatePreview, parse_update_plan, update_plan_schema
 
-UPDATE_PROMPT_TEMPLATE = """You are reviewing whether an existing wiki page should be updated from a new source.
+UPDATE_PROMPT_TEMPLATE = """Review whether an existing wiki page should be updated from a new raw source.
+
 Return JSON only.
-For each selected target, preserve editable markdown structure and citations.
-Do not invent unrelated claims.
+
+Task:
+- Decide which (if any) candidate pages should be updated.
+- For each selected page, produce FULL updated page markdown in `proposed_content` (not a fragment).
+
+Hard rules:
+- If the source is only tangentially related, do NOT propose an update.
+- `proposed_content` must preserve the existing page's main meaning and most structure.
+- Do not replace a page with a single new subsection.
+- Avoid deleting large sections unless strictly necessary and explained in `reason`.
+- Keep existing citations/sources; add new citations that point to the new source where appropriate.
+- Do not invent unrelated claims.
+
+Output requirements:
+- JSON must match the provided schema exactly.
+- Each `proposed_content` must start with a top-level title line like `# ...`.
 """
+
+def _normalize_title(value: str) -> str:
+    normalized = re.sub(r"\s+", " ", value).strip().lower()
+    normalized = re.sub(r"[^a-z0-9 _-]+", "", normalized)
+    return normalized
+
+
+def find_title_matches(conn, *, source_title: str | None, limit: int = 5) -> list[dict[str, object]]:
+    if not source_title or not source_title.strip():
+        return []
+    normalized = _normalize_title(source_title)
+    if not normalized:
+        return []
+    rows = conn.execute(
+        """
+        SELECT id, relative_path, title, summary
+        FROM wiki_pages
+        WHERE lower(title) = lower(?)
+        ORDER BY updated_at DESC
+        LIMIT ?
+        """,
+        (source_title.strip(), limit),
+    ).fetchall()
+    if not rows:
+        rows = conn.execute(
+            """
+            SELECT id, relative_path, title, summary
+            FROM wiki_pages
+            WHERE lower(replace(replace(replace(title, '.', ''), ',', ''), ':', '')) = ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (normalized, limit),
+        ).fetchall()
+    candidates: list[dict[str, object]] = []
+    for row in rows:
+        title = row["title"] or Path(row["relative_path"]).stem
+        candidates.append(
+            {
+                "wiki_page_id": row["id"],
+                "target_path": row["relative_path"],
+                "target_title": title,
+                "summary": row["summary"] or "",
+                "score": 0.0,
+                "selection_reason": f"Exact title match for `{source_title.strip()}`.",
+                "match_kind": "title_exact",
+            }
+        )
+    return candidates
+
+
+def _safe_remove_review_file(vault_path: Path, review_path: str | None) -> None:
+    if not review_path:
+        return
+    candidate = (vault_path / review_path).resolve()
+    allowed_root = (vault_path / "Wiki" / "Reviews").resolve()
+    if allowed_root not in candidate.parents:
+        return
+    try:
+        if candidate.exists() and candidate.is_file():
+            candidate.unlink()
+    except OSError:
+        # Best-effort cleanup. Proposal status is the system of record.
+        return
 
 
 def index_wiki_page(conn, *, wiki_page_id: str, relative_path: str, title: str, summary: str, content: str) -> None:
@@ -68,6 +147,7 @@ def find_related_pages(conn, *, source_title: str | None, extracted_text: str, l
                 "summary": row["summary"] or "",
                 "score": float(row["score"]),
                 "selection_reason": f"Matched wiki page terms against new source query `{query}`.",
+                "match_kind": "fts5",
             }
         )
     return candidates
@@ -123,7 +203,7 @@ def create_update_proposals(
     plan = parse_update_plan(payload)
     previews: list[ProposedUpdatePreview] = []
     for item in plan.related_pages:
-        matching = next((candidate for candidate in candidates if candidate["target_title"] == item.target_title), None)
+        matching = next((candidate for candidate in candidates if candidate["target_path"] == item.target_path), None)
         if matching is None:
             continue
         target_relative_path = str(matching["target_path"])
@@ -131,6 +211,12 @@ def create_update_proposals(
         if not target_path.exists():
             continue
         old_content = target_path.read_text(encoding="utf-8")
+        if not item.proposed_content.lstrip().startswith("#"):
+            continue
+        old_title = extract_title(old_content)
+        new_title = extract_title(item.proposed_content)
+        if old_title and new_title and old_title.strip() != new_title.strip():
+            continue
         if item.proposed_content.strip() == old_content.strip():
             continue
 
@@ -295,6 +381,7 @@ def reject_proposal(conn, *, vault_path: Path, proposal_id: str) -> dict[str, ob
         "UPDATE proposed_updates SET status = 'rejected', resolved_at = ?, last_error = NULL WHERE id = ?",
         (resolved_at, proposal_id),
     )
+    _safe_remove_review_file(vault_path, row["review_path"])
     record_audit_event(
         conn,
         vault_path=vault_path,
@@ -312,6 +399,21 @@ def reject_proposal(conn, *, vault_path: Path, proposal_id: str) -> dict[str, ob
         new_hash=sha256_text(row["proposed_content"]),
         status="rejected",
     )
+    record_audit_event(
+        conn,
+        vault_path=vault_path,
+        event_type="review_file_removed",
+        summary=f"Removed review file for rejected proposal {row['target_relative_path']}",
+        proposal_id=proposal_id,
+        ingest_run_id=row["ingest_run_id"],
+        source_file=row["source_relative_path"],
+        source_id=row["source_file_id"],
+        source_version=row["source_sha256"],
+        target_file=row["review_path"],
+        action="review_file_removed",
+        model=row["model"],
+        status="succeeded",
+    )
     return get_proposal(conn, proposal_id) or {}
 
 
@@ -320,7 +422,17 @@ def approve_proposal(conn, *, vault_path: Path, proposal_id: str) -> dict[str, o
     target_path = vault_path / row["target_relative_path"]
     current_content = target_path.read_text(encoding="utf-8") if target_path.exists() else ""
     current_hash = sha256_text(current_content)
-    if current_hash != row["target_sha256_at_creation"]:
+    baseline_hash = row["target_sha256_at_creation"] or ""
+    # Older proposals (or legacy rows) may not have captured a baseline hash.
+    # Fall back to hashing the stored old content so we can still approve safely.
+    if not baseline_hash:
+        baseline_hash = sha256_text(row["old_content"])
+        conn.execute(
+            "UPDATE proposed_updates SET target_sha256_at_creation = ? WHERE id = ?",
+            (baseline_hash, proposal_id),
+        )
+
+    if current_hash != baseline_hash:
         message = (
             "Conflict: Target page was updated by another process after this proposal was generated. "
             "Approve again to regenerate and apply."
@@ -342,13 +454,42 @@ def approve_proposal(conn, *, vault_path: Path, proposal_id: str) -> dict[str, o
             target_file=row["target_relative_path"],
             action="conflict",
             model=row["model"],
-            old_hash=row["target_sha256_at_creation"],
+            old_hash=baseline_hash,
             new_hash=current_hash,
             status="conflicted",
         )
         return get_proposal(conn, proposal_id) or {}
 
     proposed_content = row["proposed_content"]
+    try:
+        parsed_title = extract_title(proposed_content)
+        parsed_summary = extract_summary(proposed_content)
+    except WikiGenerationError as exc:
+        # Fail closed: do not write invalid markdown over an existing wiki page.
+        conn.execute(
+            "UPDATE proposed_updates SET status = 'pending', last_error = ? WHERE id = ?",
+            (str(exc), proposal_id),
+        )
+        record_audit_event(
+            conn,
+            vault_path=vault_path,
+            event_type="proposal_failed",
+            summary=f"Failed to apply proposal for {row['target_relative_path']}",
+            proposal_id=proposal_id,
+            ingest_run_id=row["ingest_run_id"],
+            source_file=row["source_relative_path"],
+            source_id=row["source_file_id"],
+            source_version=row["source_sha256"],
+            target_file=row["target_relative_path"],
+            action="failed_validation",
+            model=row["model"],
+            old_hash=baseline_hash,
+            new_hash=sha256_text(proposed_content),
+            status="failed",
+            extra_details={"error": str(exc)},
+        )
+        return get_proposal(conn, proposal_id) or {}
+
     atomic_write_text(target_path, proposed_content)
     new_hash = sha256_text(proposed_content)
     conn.execute(
@@ -365,14 +506,14 @@ def approve_proposal(conn, *, vault_path: Path, proposal_id: str) -> dict[str, o
         SET sha256 = ?, updated_at = ?, title = ?, summary = ?, status = 'updated'
         WHERE id = ?
         """,
-        (new_hash, now_iso(), extract_title(proposed_content), extract_summary(proposed_content), row["wiki_page_id"]),
+        (new_hash, now_iso(), parsed_title, parsed_summary, row["wiki_page_id"]),
     )
     index_wiki_page(
         conn,
         wiki_page_id=row["wiki_page_id"],
         relative_path=row["target_relative_path"],
-        title=extract_title(proposed_content),
-        summary=extract_summary(proposed_content),
+        title=parsed_title,
+        summary=parsed_summary,
         content=proposed_content,
     )
     record_audit_event(
@@ -410,6 +551,22 @@ def approve_proposal(conn, *, vault_path: Path, proposal_id: str) -> dict[str, o
         status="succeeded",
     )
     _update_index_and_log_after_approval(conn, vault_path=vault_path, proposal_row=row, proposed_content=proposed_content)
+    _safe_remove_review_file(vault_path, row["review_path"])
+    record_audit_event(
+        conn,
+        vault_path=vault_path,
+        event_type="review_file_removed",
+        summary=f"Removed review file for approved proposal {row['target_relative_path']}",
+        proposal_id=proposal_id,
+        ingest_run_id=row["ingest_run_id"],
+        source_file=row["source_relative_path"],
+        source_id=row["source_file_id"],
+        source_version=row["source_sha256"],
+        target_file=row["review_path"],
+        action="review_file_removed",
+        model=row["model"],
+        status="succeeded",
+    )
     return get_proposal(conn, proposal_id) or {}
 
 

@@ -77,6 +77,7 @@ class WikiGenerationSummary(BaseModel):
 
 class RelatedPageCandidate(BaseModel):
     target_title: str = Field(min_length=1)
+    target_path: str = Field(min_length=1)
     reason: str = Field(min_length=1)
     confidence: Literal["low", "medium", "high"]
     source_citations: list[SourceCitation] = Field(min_length=1)
@@ -85,6 +86,18 @@ class RelatedPageCandidate(BaseModel):
 
 class WikiUpdatePlan(BaseModel):
     related_pages: list[RelatedPageCandidate] = Field(default_factory=list)
+
+
+class CoverageSelectedPage(BaseModel):
+    target_title: str = Field(min_length=1)
+    target_path: str = Field(min_length=1)
+    confidence: Literal["low", "medium", "high"]
+    reason: str = Field(min_length=1)
+
+
+class WikiCoverageDecision(BaseModel):
+    verdict: Literal["covered", "not_covered", "unsure"]
+    selected_pages: list[CoverageSelectedPage] = Field(default_factory=list)
 
 
 def parse_generation_plan(payload: Any) -> WikiGenerationPlan:
@@ -119,3 +132,20 @@ def parse_update_plan(payload: Any) -> WikiUpdatePlan:
 
 def update_plan_schema() -> dict[str, Any]:
     return WikiUpdatePlan.model_json_schema()
+
+
+def parse_coverage_decision(payload: Any) -> WikiCoverageDecision:
+    raw_payload = payload
+    if isinstance(payload, str):
+        try:
+            raw_payload = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise LLMOutputError("LLM returned invalid JSON for wiki coverage check.") from exc
+    try:
+        return WikiCoverageDecision.model_validate(raw_payload)
+    except ValidationError as exc:
+        raise LLMOutputError("LLM returned an invalid wiki coverage decision.") from exc
+
+
+def coverage_decision_schema() -> dict[str, Any]:
+    return WikiCoverageDecision.model_json_schema()

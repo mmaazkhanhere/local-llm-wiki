@@ -63,3 +63,19 @@
 [07/05/2026 18:53:38] docs/product-specs/file-processing.md:17 Updated file-processing behavior to distinguish direct new-page writes from review-gated existing-page updates.
 [07/05/2026 18:53:38] docs/design-docs/auto-write-safety.md:3 Updated the safety design note to reflect review-gated existing-page updates.
 [07/05/2026 18:53:38] docs/generated/db-schema.md:83 Regenerated the schema reference for wiki page FTS and expanded proposal metadata.
+[07/05/2026 21:30:07] apps/desktop/backend/llm_wiki_backend/wiki/review_service.py:323 Fixed approval conflict handling for legacy proposals by backfilling `target_sha256_at_creation` from stored old content.
+[07/05/2026 21:45:51] apps/desktop/electron/src/App.jsx:321 Reworked Proposed Updates list to focus on target wiki pages and applied optimistic UI updates so approve/reject remove proposals immediately.
+[07/05/2026 21:56:27] apps/desktop/backend/llm_wiki_backend/wiki/review_service.py:333 Removed app-owned `Wiki/Reviews/*` files on approve/reject and audited the removal to prevent stale review artifacts.
+[07/05/2026 21:56:27] apps/desktop/electron/src/App.jsx:441 Forced a post-action refresh after save/edit/approve/reject so resolved proposals cannot reappear when new proposals arrive.
+[07/05/2026 22:02:25] apps/desktop/backend/llm_wiki_backend/wiki/review_service.py:396 Made proposal approval validate markdown title/summary before writing to prevent partial writes when proposed content is invalid.
+[07/05/2026 22:02:25] apps/desktop/backend/tests/test_phase4.py:290 Added regression test ensuring invalid proposed content fails closed and does not modify the target page.
+[07/05/2026 22:07:33] apps/desktop/electron/src/App.jsx:446 Fixed approve UI handling for validation-failed proposals (status stays pending) and surfaced `last_error` in list/detail to explain why changes weren’t applied.
+08/05/2026 11:43:03 docs/product-specs/review-workflow.md:9 Updated review workflow to gate new page creation on absence of related existing pages.
+08/05/2026 11:43:03 apps/desktop/backend/llm_wiki_backend/wiki/service.py:122 Prefer update proposals over new page creation when related pages are found.
+08/05/2026 11:48:44 packages/shared/prompts/wiki_coverage_check.md:1 Added LLM coverage-check prompt to gate new page creation.
+08/05/2026 11:48:44 apps/desktop/backend/llm_wiki_backend/wiki/models.py:79 Added schema for LLM wiki coverage decision.
+08/05/2026 11:48:44 apps/desktop/backend/llm_wiki_backend/wiki/review_service.py:28 Added exact title match retrieval for existing pages.
+08/05/2026 11:48:44 apps/desktop/backend/llm_wiki_backend/wiki/service.py:110 Added 3-stage coverage gating with ranked candidates before new page creation.
+08/05/2026 11:48:44 docs/product-specs/review-workflow.md:9 Documented ranked coverage check + gating behavior.
+08/05/2026 12:20:07 apps/desktop/backend/llm_wiki_backend/wiki/review_service.py:22 Tightened update prompt + fail-closed validation to avoid overwriting unrelated pages.
+08/05/2026 12:20:07 apps/desktop/backend/llm_wiki_backend/wiki/models.py:64 Added target_path to update plan schema for precise matching.
