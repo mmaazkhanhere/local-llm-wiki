@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld("desktopApi", {
   reviewReject: (vaultPath, proposalId) => ipcRenderer.invoke("review-reject", vaultPath, proposalId),
   reviewApproveAll: (vaultPath, sourceRelativePath) =>
     ipcRenderer.invoke("review-approve-all", vaultPath, sourceRelativePath),
+  askQuery: (vaultPath, question) => ipcRenderer.invoke("ask-query", vaultPath, question),
+  askProposeUpdate: (vaultPath, payload) => ipcRenderer.invoke("ask-propose-update", vaultPath, payload),
   onBackendExited: (listener) => {
     ipcRenderer.on("backend-exited", (_, payload) => listener(payload));
   }

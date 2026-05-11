@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from llm_wiki_backend.api.router.ask_router import router as ask_api_router
 from llm_wiki_backend.api.router.ingest_router import router as ingest_api_router
 from llm_wiki_backend.api.router.provider_router import router as provider_api_router
 from llm_wiki_backend.api.router.review_router import router as review_api_router
@@ -13,6 +14,7 @@ api_router.include_router(vault_api_router)
 api_router.include_router(provider_api_router)
 api_router.include_router(ingest_api_router)
 api_router.include_router(review_api_router)
+api_router.include_router(ask_api_router)
 api_router.include_router(ws_api_router)
 
 __all__ = ["api_router"]

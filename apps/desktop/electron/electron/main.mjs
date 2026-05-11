@@ -424,6 +424,14 @@ ipcMain.handle("review-approve-all", async (_, vaultPath, sourceRelativePath) =>
   )
 );
 
+ipcMain.handle("ask-query", async (_, vaultPath, question) =>
+  backendPost("/ask/query", { question }, `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
+
+ipcMain.handle("ask-propose-update", async (_, vaultPath, payload) =>
+  backendPost("/ask/propose-update", payload, `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
+
 app.whenReady().then(async () => {
   await startBackend();
   await createWindow();

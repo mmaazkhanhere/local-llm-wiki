@@ -82,3 +82,19 @@
 [11/05/2026 10:59:22] App.jsx:42 Added proposal draft tracking state and guarded refresh logic so polling/events do not overwrite unsaved proposal edits in the Proposed Updates editor.
 [11/05/2026 10:59:22] App.jsx:427 Updated review actions to support discard, auto-save edited proposal content before approve, and block proposal switching while unsaved edits exist.
 [11/05/2026 10:59:22] styles.css:237 Added editor header and saved/unsaved draft badge styles to make proposal edit state clear in the review UI.
+[11/05/2026 12:05:00] IMPLEMENTATION_PHASES.md:853 Added a sequential Phase 5 Ask implementation plan with per-feature testing and verification gates aligned to the implementation plan.
+[11/05/2026 12:05:00] change-log.md:86 Logged the Phase 5 Ask planning update.
+[11/05/2026 12:45:00] apps/desktop/backend/llm_wiki_backend/core/models.py:155 Added Ask request/response/propose models for Ask API contracts.
+[11/05/2026 12:45:00] apps/desktop/backend/llm_wiki_backend/ask/service.py:35 Added Ask service pipeline with wiki-first retrieval, neighbor expansion, optional raw verification, citation validation, and proposal creation.
+[11/05/2026 12:45:00] apps/desktop/backend/llm_wiki_backend/api/router/ask_router.py:11 Added Ask routes for query and proposal handoff with vault validation and fail-closed error handling.
+[11/05/2026 12:45:00] apps/desktop/backend/llm_wiki_backend/api/router/__init__.py:17 Wired Ask router into the backend API.
+[11/05/2026 12:45:00] apps/desktop/backend/llm_wiki_backend/ask/__init__.py:1 Added Ask package marker module.
+[11/05/2026 12:45:00] apps/desktop/electron/electron/main.mjs:427 Added Electron IPC handlers for Ask query and Ask-to-proposal actions.
+[11/05/2026 12:45:00] apps/desktop/electron/electron/preload.mjs:26 Exposed Ask IPC methods on the renderer bridge.
+[11/05/2026 12:45:00] apps/desktop/electron/src/global.d.ts:65 Added Ask bridge typings for query and proposal responses.
+[11/05/2026 12:45:00] apps/desktop/electron/src/App.jsx:552 Implemented Ask UI flow with question submission, answer/citation display, unsupported handling, and Propose Wiki Update action.
+[11/05/2026 12:45:00] apps/desktop/electron/src/styles.css:281 Added Ask-specific input/result styling for readable answer and citation presentation.
+[11/05/2026 12:45:00] apps/desktop/backend/tests/test_phase5.py:83 Added Phase 5 tests for wiki-first retrieval, raw fallback, citation hallucination rejection, and reviewable Ask proposal creation.
+[11/05/2026 12:45:00] change-log.md:98 Logged Phase 5 Ask implementation updates.
+[11/05/2026 12:53:00] apps/desktop/backend/llm_wiki_backend/ask/service.py:49 Tightened raw fallback so Ask uses raw chunks only when no wiki evidence is found.
+[11/05/2026 12:53:00] change-log.md:100 Logged Ask retrieval fallback correction and local Phase 5 test pass verification.

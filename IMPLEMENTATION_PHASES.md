@@ -850,6 +850,76 @@ Phase 4 is complete when:
 
 Provide wiki-first instant answers without automatically saving answers.
 
+## Phase 5 delivery rule
+
+Implement Phase 5 strictly in this order:
+
+```text
+5.1 Ask UI shell
+5.2 Wiki-first retrieval
+5.3 Graph-neighbor expansion
+5.4 Raw-source verification
+5.5 Answer generation with citations
+5.6 Propose wiki update
+```
+
+Do not start the next feature until the current feature:
+
+* has targeted tests added first or updated first
+* passes the smallest relevant backend and frontend checks
+* is manually verified in the desktop app
+* proves that a plain Ask run does not write Wiki/ content automatically
+
+## Phase 5 implementation plan
+
+### Feature 5.1 implementation sequence
+
+1. Define the Ask request/response contract first, including question text, answer body, citations, unsupported-answer state, and trace metadata that stays internal to the app.
+2. Add or update tests first for empty-question validation, success payload shape, error handling, loading state transitions, and the rule that Ask does not persist an answer by default.
+3. Add the minimal backend route and Electron bridge for Ask before any retrieval logic so the UI can be built against a stable typed contract.
+4. Build the Ask screen as a focused UI slice with question input, submit action, loading state, answer panel, citation list, and error state. Keep renderer logic in dedicated Ask modules instead of growing unrelated logic in one file.
+5. Verify the feature by submitting a mocked successful question, an empty question, and a forced backend failure, then confirm no wiki page, review file, or audit write happens from Ask alone.
+
+### Feature 5.2 implementation sequence
+
+1. Add or update retrieval tests first for wiki-first ranking, empty-result handling, and the rule that raw chunks are not queried during the first retrieval stage.
+2. Implement Ask retrieval in backend service modules, not in the route. Reuse `wiki_pages_fts` first and add `index.md` mirroring support only if the current schema cannot satisfy the `Wiki/index.md -> wiki pages -> raw verification` order from `IMPLEMENTATION_PLAN.md`.
+3. Return a retrieval trace that distinguishes selected wiki pages from any later raw verification so tests can assert the ordering deterministically.
+4. Keep the first working version narrow: select top wiki candidates, deduplicate them, and cap payload size before sending anything to the LLM.
+5. Verify the feature with fixture wiki pages and confirm the first retrieval stage succeeds without touching raw chunk search.
+
+### Feature 5.3 implementation sequence
+
+1. Add or update tests first for `[[Wiki Links]]` parsing, duplicate-neighbor suppression, and token-budget limits on neighbor expansion.
+2. Implement neighbor loading as a second wiki-only step after primary wiki search. Do not mix it with raw-source verification.
+3. Prefer deterministic neighbor selection: direct outgoing links first, then optional backlinks only if the current data model supports them safely.
+4. Keep neighbor enrichment bounded so the answer context remains concise and predictable.
+5. Verify the feature by tracing a result set that loads the expected linked pages without inflating context unnecessarily.
+
+### Feature 5.4 implementation sequence
+
+1. Add or update tests first for retrieval layering, source deduplication, citation-anchor preservation, and the rule that raw chunks stay secondary to wiki evidence.
+2. Implement raw verification as an explicit second-stage retrieval pass that runs only when the answer path needs citation support or wiki context is insufficient.
+3. Query `chunks_fts` with bounded limits, preserve page/section/line anchors, and keep the selected raw evidence separate from wiki evidence in the response contract.
+4. Fail closed when citation anchors cannot be mapped back to a real raw source location.
+5. Verify the feature by confirming a wiki-backed answer can complete without raw retrieval, while a citation-sensitive answer pulls only the minimum supporting raw chunks.
+
+### Feature 5.5 implementation sequence
+
+1. Add or update tests first for supported answers, unsupported answers, invalid structured LLM output, and citation validation with mocked provider responses.
+2. Add the Ask prompt contract in shared prompts and keep the backend call inside `LLMProvider`. The route should orchestrate services only.
+3. Require the answer generator to cite the evidence it actually received. If the model cannot support the answer from retrieved context, return an explicit unsupported result instead of a weak synthesis.
+4. Keep the first shipped version non-streaming unless streaming is required to make the feature usable.
+5. Verify the feature by checking that answers cite wiki pages and raw sources correctly, unsupported answers stay explicit, and fabricated citations are rejected.
+
+### Feature 5.6 implementation sequence
+
+1. Add or update tests first for the “Propose wiki update” action, including the rule that it creates a reviewable proposal and never writes directly to an existing wiki page.
+2. Reuse the Phase 4 review workflow instead of creating a parallel Ask-specific update path. Ask should hand off answer text, evidence, and target metadata into the existing proposal system.
+3. Keep Ask state ephemeral unless the user explicitly requests a follow-up action. Do not add durable Ask history as part of this feature.
+4. Disable the action when the answer is unsupported or lacks enough grounded evidence to create a safe proposal.
+5. Verify the feature by creating a proposal from an Ask answer, confirming it appears in the pending review list, and confirming that ordinary Ask usage still produces no automatic writes.
+
 ---
 
 ## Feature 5.1 — Build Ask UI

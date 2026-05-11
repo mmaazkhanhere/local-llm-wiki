@@ -43,6 +43,11 @@ export function App() {
   const [reviewSavedContent, setReviewSavedContent] = useState("");
   const [reviewMessage, setReviewMessage] = useState("No pending proposals yet.");
   const [reviewBusy, setReviewBusy] = useState(false);
+  const [askQuestion, setAskQuestion] = useState("");
+  const [askBusy, setAskBusy] = useState(false);
+  const [askMessage, setAskMessage] = useState("Ask is ready.");
+  const [askResult, setAskResult] = useState(null);
+  const [askTargetPath, setAskTargetPath] = useState("");
 
   function saveLastVaultPath(pathValue) {
     try {
@@ -532,6 +537,68 @@ export function App() {
     await refreshReviews(vaultPath, false);
   }
 
+  async function runAskQuery() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath) {
+      setAskMessage("Select and initialize a vault first.");
+      return;
+    }
+    if (!askQuestion.trim()) {
+      setAskMessage("Enter a question first.");
+      return;
+    }
+    setAskBusy(true);
+    setAskMessage("Asking...");
+    const result = await desktopApi.askQuery(vaultPath, askQuestion.trim());
+    setAskBusy(false);
+    if (!result.ok || !result.payload) {
+      setAskResult(null);
+      setAskMessage(`Ask failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setAskResult(result.payload);
+    const firstWikiCitation = (result.payload.citations ?? []).find((item) => item.kind === "wiki");
+    setAskTargetPath(firstWikiCitation?.path ?? "");
+    setAskMessage(result.payload.unsupported ? "Unsupported answer." : "Answer generated.");
+  }
+
+  async function proposeAskUpdate() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath || !askResult) {
+      setAskMessage("Run Ask first.");
+      return;
+    }
+    if (askResult.unsupported) {
+      setAskMessage("Cannot propose update for unsupported answers.");
+      return;
+    }
+    const targetPath = askTargetPath.trim();
+    const targetCitation = (askResult.citations ?? []).find((item) => item.kind === "wiki" && item.path === targetPath);
+    if (!targetPath || !targetCitation) {
+      setAskMessage("Select a wiki target path from wiki citations.");
+      return;
+    }
+    setAskBusy(true);
+    const payload = {
+      question: askQuestion.trim(),
+      answer: askResult.answer,
+      target_relative_path: targetPath,
+      target_title: targetCitation.title ?? targetPath.split("/").pop()?.replace(".md", "") ?? "Wiki Page",
+      reason: "Proposed from Ask answer",
+      source_citations: (askResult.citations ?? []).map((item) => ({
+        locator: item.locator || item.path,
+      })),
+    };
+    const result = await desktopApi.askProposeUpdate(vaultPath, payload);
+    setAskBusy(false);
+    if (!result.ok || !result.payload) {
+      setAskMessage(`Propose update failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setAskMessage(`Proposal created: ${result.payload.proposal_id}`);
+    await refreshReviews(vaultPath, false);
+  }
+
   useEffect(() => {
     if (!vaultPath || !watchStatus.running) {
       return undefined;
@@ -596,6 +663,7 @@ export function App() {
   const isSettings = activeView === "Settings";
   const isRawInbox = activeView === "Raw Inbox";
   const isProposedUpdates = activeView === "Proposed Updates";
+  const isAsk = activeView === "Ask";
   const hasUnsavedProposalEdits = Boolean(selectedProposal) && reviewEditorContent !== reviewSavedContent;
 
   return (
@@ -904,7 +972,74 @@ export function App() {
               </section>
             </div>
           )}
-          {!isDashboard && !isSettings && !isRawInbox && !isProposedUpdates && (
+          {isAsk && (
+            <div className="stack">
+              <label htmlFor="ask-question"><strong>Question</strong></label>
+              <textarea
+                id="ask-question"
+                className="ask-input"
+                value={askQuestion}
+                onChange={(event) => setAskQuestion(event.target.value)}
+                placeholder="Ask from your compiled wiki..."
+              />
+              <div className="row">
+                <button type="button" className="action-btn" onClick={runAskQuery} disabled={askBusy}>
+                  {askBusy ? "Asking..." : "Ask"}
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn"
+                  onClick={proposeAskUpdate}
+                  disabled={askBusy || !askResult || askResult.unsupported}
+                >
+                  Propose Wiki Update
+                </button>
+              </div>
+              <p>{askMessage}</p>
+              {askResult && (
+                <div className="ask-result">
+                  <p><strong>Status:</strong> {askResult.unsupported ? "Unsupported" : "Supported"}</p>
+                  <pre className="content-box ask-answer">{askResult.answer}</pre>
+                  <div className="stack">
+                    <strong>Citations</strong>
+                    {askResult.citations?.length > 0 ? (
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>ID</th>
+                            <th>Kind</th>
+                            <th>Path</th>
+                            <th>Locator</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {askResult.citations.map((citation) => (
+                            <tr key={citation.citation_id}>
+                              <td>{citation.citation_id}</td>
+                              <td>{citation.kind}</td>
+                              <td>{citation.path}</td>
+                              <td>{citation.locator || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p>No citations returned.</p>
+                    )}
+                  </div>
+                  <label htmlFor="ask-target"><strong>Proposal target</strong></label>
+                  <input
+                    id="ask-target"
+                    type="text"
+                    value={askTargetPath}
+                    onChange={(event) => setAskTargetPath(event.target.value)}
+                    placeholder="Wiki/Concepts/Some Page.md"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+          {!isDashboard && !isSettings && !isRawInbox && !isProposedUpdates && !isAsk && (
             <p>
               This is the Phase 0 UI shell placeholder for <strong>{activeView}</strong>.
             </p>

@@ -150,3 +150,31 @@ class ApproveAllResponse(BaseModel):
     applied: int = 0
     conflicted: int = 0
     failed: int = 0
+
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1)
+
+
+class AskCitation(BaseModel):
+    citation_id: str
+    kind: Literal["wiki", "raw"]
+    path: str
+    locator: str | None = None
+    title: str | None = None
+
+
+class AskResponse(BaseModel):
+    answer: str
+    unsupported: bool = False
+    citations: list[AskCitation] = Field(default_factory=list)
+    trace: dict = Field(default_factory=dict)
+
+
+class AskProposeRequest(BaseModel):
+    question: str = Field(min_length=1)
+    answer: str = Field(min_length=1)
+    target_relative_path: str = Field(min_length=1)
+    target_title: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    source_citations: list[dict] = Field(default_factory=list)

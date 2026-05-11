@@ -278,6 +278,23 @@ th {
   max-width: none;
 }
 
+.ask-input {
+  width: 100%;
+  max-width: none;
+  min-height: 120px;
+}
+
+.ask-result {
+  border: 1px solid #d8deea;
+  border-radius: 10px;
+  background: #fbfcff;
+  padding: 12px;
+}
+
+.ask-answer {
+  min-height: 120px;
+}
+
 .muted {
   color: #5c6b82;
 }

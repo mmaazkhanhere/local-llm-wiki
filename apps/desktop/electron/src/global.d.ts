@@ -62,6 +62,27 @@ declare global {
         };
         error?: string;
       }>;
+      askQuery: (vaultPath: string, question: string) => Promise<{
+        ok: boolean;
+        payload?: {
+          answer: string;
+          unsupported: boolean;
+          citations: Array<{
+            citation_id: string;
+            kind: "wiki" | "raw";
+            path: string;
+            locator?: string | null;
+            title?: string | null;
+          }>;
+          trace: Record<string, unknown>;
+        };
+        error?: string;
+      }>;
+      askProposeUpdate: (vaultPath: string, payload: Record<string, unknown>) => Promise<{
+        ok: boolean;
+        payload?: { proposal_id: string; review_path: string };
+        error?: string;
+      }>;
       onBackendExited: (listener: (payload: { code: number | null }) => void) => void;
     };
   }
