@@ -234,6 +234,28 @@ th {
   gap: 18px;
 }
 
+.editor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.draft-pill {
+  border: 1px solid #b7c3d7;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.82rem;
+  color: #41536f;
+  background: #edf2fb;
+}
+
+.draft-pill.dirty {
+  border-color: #b35c00;
+  color: #7a4300;
+  background: #fff0db;
+}
+
 .content-box,
 .editor-box {
   width: 100%;

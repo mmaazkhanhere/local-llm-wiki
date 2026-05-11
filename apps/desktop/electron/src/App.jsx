@@ -40,6 +40,7 @@ export function App() {
   const [selectedProposalId, setSelectedProposalId] = useState("");
   const [selectedProposal, setSelectedProposal] = useState(null);
   const [reviewEditorContent, setReviewEditorContent] = useState("");
+  const [reviewSavedContent, setReviewSavedContent] = useState("");
   const [reviewMessage, setReviewMessage] = useState("No pending proposals yet.");
   const [reviewBusy, setReviewBusy] = useState(false);
 
@@ -294,6 +295,7 @@ export function App() {
       setSelectedProposal(null);
       setSelectedProposalId("");
       setReviewEditorContent("");
+      setReviewSavedContent("");
       setReviewMessage("No pending proposals yet.");
       return;
     }
@@ -301,12 +303,16 @@ export function App() {
       setSelectedProposalId("");
       setSelectedProposal(null);
       setReviewEditorContent("");
+      setReviewSavedContent("");
     }
     const preferredId =
       keepSelected && selectedProposalId && proposals.some((item) => item.id === selectedProposalId)
         ? selectedProposalId
         : proposals[0].id;
-    await loadProposal(pathValue, preferredId);
+    const hasDraftEdits = selectedProposal && selectedProposal.id === preferredId && reviewEditorContent !== reviewSavedContent;
+    if (!hasDraftEdits) {
+      await loadProposal(pathValue, preferredId);
+    }
     setReviewMessage(`Loaded ${proposals.length} pending proposal${proposals.length === 1 ? "" : "s"}.`);
   }
 
@@ -320,7 +326,19 @@ export function App() {
     }
     setSelectedProposalId(proposalId);
     setSelectedProposal(result.payload);
-    setReviewEditorContent(result.payload.proposed_content ?? "");
+    const proposedContent = result.payload.proposed_content ?? "";
+    setReviewEditorContent(proposedContent);
+    setReviewSavedContent(proposedContent);
+  }
+
+  async function selectProposal(pathValue, proposalId) {
+    if (!pathValue || !proposalId) return;
+    if (selectedProposalId === proposalId) return;
+    if (selectedProposal && reviewEditorContent !== reviewSavedContent) {
+      setReviewMessage("Save or discard your draft before switching proposals.");
+      return;
+    }
+    await loadProposal(pathValue, proposalId);
   }
 
   function removeProposalFromList(proposalId) {
@@ -329,6 +347,7 @@ export function App() {
       setSelectedProposalId("");
       setSelectedProposal(null);
       setReviewEditorContent("");
+      setReviewSavedContent("");
     }
   }
 
@@ -435,16 +454,36 @@ export function App() {
       return;
     }
     setSelectedProposal(result.payload);
-    setReviewEditorContent(result.payload.proposed_content);
+    const proposedContent = result.payload.proposed_content ?? "";
+    setReviewEditorContent(proposedContent);
+    setReviewSavedContent(proposedContent);
     updateProposalInList(result.payload);
     setReviewMessage("Edited proposal saved.");
     await refreshReviews(vaultPath);
+  }
+
+  function discardProposalEdits() {
+    setReviewEditorContent(reviewSavedContent);
+    setReviewMessage("Unsaved edits discarded.");
   }
 
   async function approveProposal() {
     const desktopApi = window.desktopApi;
     if (!desktopApi || !vaultPath || !selectedProposal) return;
     setReviewBusy(true);
+    if (reviewEditorContent !== reviewSavedContent) {
+      const editResult = await desktopApi.reviewEdit(vaultPath, selectedProposal.id, reviewEditorContent);
+      if (!editResult.ok || !editResult.payload) {
+        setReviewBusy(false);
+        setReviewMessage(`Save before approve failed: ${editResult.error ?? "Unknown error"}`);
+        return;
+      }
+      setSelectedProposal(editResult.payload);
+      const proposedContent = editResult.payload.proposed_content ?? "";
+      setReviewEditorContent(proposedContent);
+      setReviewSavedContent(proposedContent);
+      updateProposalInList(editResult.payload);
+    }
     const result = await desktopApi.reviewApprove(vaultPath, selectedProposal.id);
     setReviewBusy(false);
     if (!result.ok || !result.payload) {
@@ -557,6 +596,7 @@ export function App() {
   const isSettings = activeView === "Settings";
   const isRawInbox = activeView === "Raw Inbox";
   const isProposedUpdates = activeView === "Proposed Updates";
+  const hasUnsavedProposalEdits = Boolean(selectedProposal) && reviewEditorContent !== reviewSavedContent;
 
   return (
     <div className="app-shell">
@@ -757,7 +797,7 @@ export function App() {
                         key={proposal.id}
                         type="button"
                         className={proposal.id === selectedProposalId ? "proposal-btn active" : "proposal-btn"}
-                        onClick={() => loadProposal(vaultPath, proposal.id)}
+                        onClick={() => selectProposal(vaultPath, proposal.id)}
                       >
                         <span>
                           <strong>{proposal.target_title}</strong>
@@ -787,10 +827,24 @@ export function App() {
                         <p><strong>Reason:</strong> {selectedProposal.reason}</p>
                         <p><strong>Status:</strong> {selectedProposal.status}</p>
                         {selectedProposal.last_error && <p><strong>Last error:</strong> {selectedProposal.last_error}</p>}
+                        <p><strong>Draft:</strong> {hasUnsavedProposalEdits ? "Unsaved edits" : "Saved"}</p>
                       </div>
                       <div className="stack">
-                        <button type="button" className="action-btn" disabled={reviewBusy} onClick={saveEditedProposal}>
+                        <button
+                          type="button"
+                          className="action-btn"
+                          disabled={reviewBusy || !hasUnsavedProposalEdits}
+                          onClick={saveEditedProposal}
+                        >
                           Save Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="action-btn"
+                          disabled={reviewBusy || !hasUnsavedProposalEdits}
+                          onClick={discardProposalEdits}
+                        >
+                          Discard Edit
                         </button>
                         <button type="button" className="action-btn success-btn" disabled={reviewBusy} onClick={approveProposal}>
                           Approve
@@ -832,7 +886,12 @@ export function App() {
                         <pre className="content-box">{selectedProposal.old_content}</pre>
                       </div>
                       <div>
-                        <h4>Proposed Content</h4>
+                        <div className="editor-head">
+                          <h4>Proposed Content</h4>
+                          <span className={hasUnsavedProposalEdits ? "draft-pill dirty" : "draft-pill"}>
+                            {hasUnsavedProposalEdits ? "Unsaved" : "Saved"}
+                          </span>
+                        </div>
                         <textarea
                           className="editor-box"
                           value={reviewEditorContent}

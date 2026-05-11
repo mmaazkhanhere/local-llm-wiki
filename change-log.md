@@ -79,3 +79,6 @@
 08/05/2026 11:48:44 docs/product-specs/review-workflow.md:9 Documented ranked coverage check + gating behavior.
 08/05/2026 12:20:07 apps/desktop/backend/llm_wiki_backend/wiki/review_service.py:22 Tightened update prompt + fail-closed validation to avoid overwriting unrelated pages.
 08/05/2026 12:20:07 apps/desktop/backend/llm_wiki_backend/wiki/models.py:64 Added target_path to update plan schema for precise matching.
+[11/05/2026 10:59:22] App.jsx:42 Added proposal draft tracking state and guarded refresh logic so polling/events do not overwrite unsaved proposal edits in the Proposed Updates editor.
+[11/05/2026 10:59:22] App.jsx:427 Updated review actions to support discard, auto-save edited proposal content before approve, and block proposal switching while unsaved edits exist.
+[11/05/2026 10:59:22] styles.css:237 Added editor header and saved/unsaved draft badge styles to make proposal edit state clear in the review UI.
