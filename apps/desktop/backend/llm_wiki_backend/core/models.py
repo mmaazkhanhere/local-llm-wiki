@@ -98,6 +98,7 @@ class IngestFileResponse(BaseModel):
 
 
 class IngestSummaryResponse(BaseModel):
+    ingest_run_id: str | None = None
     discovered_count: int = 0
     queued_count: int = 0
     processed_count: int = 0
@@ -105,6 +106,7 @@ class IngestSummaryResponse(BaseModel):
     failed_count: int = 0
     pending_image_count: int = 0
     wiki_generation: dict | None = None
+    lint: dict | None = None
 
 
 class RawInboxResponse(BaseModel):

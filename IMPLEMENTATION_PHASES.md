@@ -1018,99 +1018,230 @@ Phase 5 is complete when:
 
 ## Goal
 
-Automatically maintain wiki health after ingest.
-
+Maintain wiki health after ingest by detecting structural errors, provenance problems, semantic drift, contradictions, stale claims, orphan pages, and missing synthesis opportunities.
+Lint should not rewrite the whole wiki. It should produce:
+```text
+1. Deterministic errors
+2. Safe auto-fixes
+3. Semantic review pages
+4. Audit records
+5. Dashboard status
+```
 ---
 
 ## Feature 6.1 — Auto-run lint after ingest
 
-Trigger lint after processing.
+Run a post-ingest smoke lint after every successful ingest.
+This should not roll back the raw ingest. Instead, it marks the wiki status as:
+```text
+clean
+warnings
+needs_review
+mechanical_errors
+lint_failed
+```
 
 ### Complete when
 
 * Lint runs after successful ingest.
-* Lint status appears in Dashboard.
-* Lint failure does not break ingest.
+* Lint run is linked to the ingest run ID.
+* Dashboard shows latest lint status.
+* Lint failure does not erase ingest output.
+* Severe mechanical errors mark wiki as mechanical_errors.
+* Tests verify lint trigger after ingest.
+* Lint failure does not undo ingest, but it can mark the wiki as not healthy.
 * Tests verify lint trigger.
 
 ---
 
-## Feature 6.2 — Detect broken mechanical issues
+## Feature 6.2 — Deterministic mechanical lint
 
-Detect:
+Detect objective problems without using an LLM. Check
 
 ```text
 Missing index entries
 Broken internal links
-Missing obvious backlinks
-Empty duplicate pages
+Missing reciprocal backlinks when required by schema
+Empty pages
+Duplicate slugs
+Broken source references
+Invalid frontmatter
+Missing log entries
 ```
 
 ### Complete when
 
-* Lint finds mechanical issues.
-* Issues are stored in SQLite.
-* UI shows issue count.
-* Tests use fixture wiki.
+- Deterministic lint runs without LLM calls.
+- Issues are stored in SQLite.
+- UI shows issue count by severity.
+- Tests use fixture wiki with known broken links, missing index entries, duplicate slugs, empty pages, and broken source paths.
+- Lint output is stable and repeatable.
 
 ---
 
-## Feature 6.3 — Auto-fix safe issues
+## Feature 6.3 - Provenance and citation lint
 
-Fix only safe broken issues.
-
-### Complete when
-
-* Missing index entries can be fixed.
-* Obvious broken links can be fixed.
-* Fixes are audited.
-* Semantic issues are not auto-fixed.
-* Tests verify safe/unsafe boundaries.
-
----
-
-## Feature 6.4 — Create Review pages for semantic issues
-
-Create pages in:
-
+The lint must verify that wiki claims remain connected to raw sources. Check:
 ```text
-Wiki/Reviews/
+Every source page points to an existing raw file.
+Every factual page has at least one source reference.
+Recently changed claims have source references.
+Citation/source IDs resolve.
+No claim says “according to source” without an actual source pointer.
+No wiki page cites another wiki page as the only source for a factual claim.
 ```
 
-For:
+### Complete when
 
+- Missing source references are detected.
+- Broken raw paths are detected.
+- Source pages without raw backing are flagged.
+- Changed pages without source references are flagged.
+- Tests verify citation/source-path lint.
+
+---
+
+## Feature 6.4 — Auto-fix safe mechanical issues
+
+Auto-fix only deterministic, low-risk issues. Safe auto fix includes:
+```text
+- Add missing index entry
+- Add missing log entry
+- Fix obvious slug casing mismatch
+- Normalize frontmatter ordering
+- Remove duplicate whitespace
+- Repair wikilink when exact slug match exists
+- Mark empty generated page as stub
+```
+
+Unsafe fixes include:
 ```text
 Contradictions
 Stale claims
-Uncited claims
-Duplicate concepts needing judgment
-Overlong pages
+Uncited factual claims
+Duplicate concepts
+Page merges
+Page rewrites
+Claim deletion
+Confidence/status changes
+New synthesis claims
+```
+
+### Complete when
+- Missing index entries can be fixed.
+- Obvious broken links can be fixed only when there is a single unambiguous target.
+- Fixes are audited.
+- Semantic issues are never auto-fixed.
+- Tests verify safe/unsafe boundaries.
+- Auto-fix can run in dry-run mode.
+
+---
+
+## Feature 3.5 - LLM semantic lint
+Use the LLM for issues that require meaning, judgment, or cross-page interpretation. Check
+```text
+Contradictions between pages
+Claims superseded by newer sources
+Claims that sound factual but lack citation
+Duplicate concepts with different names
+Over-broad or mixed-topic pages
+Important concepts mentioned often but lacking a page
+Missing cross-references between related pages
 Low-confidence concepts
+Pages that need splitting
+Synthesis pages that no longer reflect source pages
+Data gaps that need web search or new raw sources
 ```
 
 ### Complete when
 
-* Review pages are created for semantic issues.
-* Affected concept page is not modified directly.
-* Review page cites relevant sources/pages.
-* Tests verify Review page creation.
+- LLM lint runs on changed pages plus linked neighbor pages.
+- LLM lint returns JSON only.
+- LLM lint produces issues, not direct edits.
+- Every semantic issue references affected pages and supporting evidence.
+- Tests use mocked LLM responses.
 
 ---
+
+## Feature 6.6 — Create Review pages for semantic issues
+For semantic issues, create review artifacts instead of directly changing concept pages. These should be displayed as a proposal request. Use `Wiki/Reviews/`. Reveiew page
+types: 
+```text
+contradiction
+stale_claim
+uncited_claim
+duplicate_concept
+missing_concept
+missing_crosslink
+overlong_page
+low_confidence_concept
+data_gap
+page_split_candidate
+```
+
+### Complete when
+- Review pages are created for semantic issues.
+- Affected concept pages are not modified directly during lint.
+- Review pages cite relevant pages/sources.
+- Duplicate review pages are avoided using issue fingerprints.
+- UI links from issue → review page.
+- Tests verify review page creation.
+ 
+--- 
+
+## Feature 6.7 — Audit and log every lint action
+`log.md` is append-only and should record ingests, queries, and lint passes. Store the following in SQLite
+```text
+lint_runs
+lint_issues
+lint_fixes
+review_pages
+```
+
+Append to wiki log `log.md` in the example format as below
+```md
+## [2026-05-11] lint | post-ingest smoke check
+
+- Ingest run: ingest_...
+- Status: warnings
+- Mechanical issues: 2
+- Semantic issues: 1
+- Auto-fixes applied: 1
+- Review pages created: 1
+```
+
+### Complete When:
+- Every lint run is recorded.
+- Every issue has severity, type, page, status, and fingerprint.
+- Every auto-fix has before/after diff.
+- `log.md` receives a lint entry.
+- Tests verify audit persistence.
+---
+
+## Issue Severity Model
+error    = mechanically invalid wiki; must fix soon
+warning  = likely quality problem; review recommended
+info     = optional improvement
+
 
 ## Phase 6 acceptance criteria
 
 Phase 6 is complete when:
-
 ```text
-- Lint auto-runs after ingest.
-- Mechanical issues are detected.
-- Safe mechanical issues are auto-fixed.
-- Semantic issues create Review pages.
-- Lint status appears in UI.
-- Every auto-fix is audited.
-- Tests pass.
+- Lint auto-runs after successful ingest.
+- Lint run is linked to ingest run ID.
+- Deterministic mechanical lint detects schema, link, index, source, and log issues.
+- Provenance lint detects missing or broken raw-source references.
+- Safe mechanical issues can be auto-fixed with audited diffs.
+- Unsafe or semantic issues are never auto-fixed directly.
+- LLM semantic lint detects contradictions, stale claims, duplicate concepts, missing concepts, missing crosslinks, and data gaps.
+- Semantic issues create Review pages in Wiki/Reviews/.
+- Duplicate Review pages are avoided using issue fingerprints.
+- Lint status appears in Dashboard.
+- Every lint run is stored in SQLite.
+- Every lint run is appended to log.md.
+- Tests cover deterministic lint, auto-fix boundaries, review-page creation, audit records, and dashboard status.
 ```
-
 ---
 
 # Phase 7 — Git

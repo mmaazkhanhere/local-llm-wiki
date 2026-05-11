@@ -203,7 +203,15 @@ def create_update_proposals(
     plan = parse_update_plan(payload)
     previews: list[ProposedUpdatePreview] = []
     for item in plan.related_pages:
-        matching = next((candidate for candidate in candidates if candidate["target_path"] == item.target_path), None)
+        matching = None
+        if item.target_path:
+            matching = next((candidate for candidate in candidates if candidate["target_path"] == item.target_path), None)
+        if matching is None:
+            normalized = _normalize_title(item.target_title)
+            matching = next(
+                (candidate for candidate in candidates if _normalize_title(str(candidate.get("target_title") or "")) == normalized),
+                None,
+            )
         if matching is None:
             continue
         target_relative_path = str(matching["target_path"])

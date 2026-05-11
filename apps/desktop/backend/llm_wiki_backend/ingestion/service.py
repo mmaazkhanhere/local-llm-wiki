@@ -22,6 +22,7 @@ from llm_wiki_backend.ingestion.time_utils import now_iso, timestamp_iso
 from llm_wiki_backend.ingestion.types import FileSnapshot, ProcessSummary
 from llm_wiki_backend.observability.logging import get_logger
 from llm_wiki_backend.observability.events import EVENT_HUB
+from llm_wiki_backend.lint.service import run_post_ingest_smoke_lint
 from llm_wiki_backend.wiki.service import generate_wiki_for_pending_sources
 
 logger = get_logger(__name__)
@@ -227,11 +228,15 @@ def process_queued_files(vault_path: Path) -> ProcessSummary:
 
 def ingest_raw_files(vault_path: Path) -> ProcessSummary:
     logger.info("Running ingest (scan/hash/process/wiki)")
-    EVENT_HUB.publish("ingest_run_started", {"vault_path": str(vault_path)})
+    import uuid
+
+    ingest_run_id = str(uuid.uuid4())
+    EVENT_HUB.publish("ingest_run_started", {"vault_path": str(vault_path), "ingest_run_id": ingest_run_id})
     scan = scan_raw_files(vault_path)
     hashed = hash_discovered_files(vault_path)
     processed = process_queued_files(vault_path)
-    wiki_summary = generate_wiki_for_pending_sources(vault_path)
+    wiki_summary = generate_wiki_for_pending_sources(vault_path, ingest_run_id=ingest_run_id)
+    lint_summary = run_post_ingest_smoke_lint(vault_path=vault_path, ingest_run_id=ingest_run_id)
     logger.info(
         "Ingest complete processed=%s failed=%s pending_image=%s wiki_pages=%s wiki_failed=%s",
         processed.processed_count,
@@ -241,6 +246,7 @@ def ingest_raw_files(vault_path: Path) -> ProcessSummary:
         wiki_summary.failed_count,
     )
     return ProcessSummary(
+        ingest_run_id=ingest_run_id,
         discovered_count=scan.discovered_count,
         queued_count=hashed.queued_count,
         skipped_count=hashed.skipped_count,
@@ -248,6 +254,7 @@ def ingest_raw_files(vault_path: Path) -> ProcessSummary:
         processed_count=processed.processed_count,
         failed_count=processed.failed_count + wiki_summary.failed_count,
         wiki_generation=wiki_summary.model_dump(),
+        lint=lint_summary.__dict__,
     )
 
 
@@ -293,6 +300,9 @@ def process_single_path(vault_path: Path, file_path: Path) -> ProcessSummary:
         return ProcessSummary()
 
     logger.info("Watcher ingest triggered path=%s", relative.as_posix())
+    import uuid
+
+    ingest_run_id = str(uuid.uuid4())
     with connect_database(vault_path) as conn:
         vault_id_value = ensure_vault_row(conn, vault_path)
         stat = resolved.stat()
@@ -313,14 +323,17 @@ def process_single_path(vault_path: Path, file_path: Path) -> ProcessSummary:
 
     hashed = hash_discovered_files(vault_path)
     processed = process_queued_files(vault_path)
-    wiki_summary = generate_wiki_for_pending_sources(vault_path)
+    wiki_summary = generate_wiki_for_pending_sources(vault_path, ingest_run_id=ingest_run_id)
+    lint_summary = run_post_ingest_smoke_lint(vault_path=vault_path, ingest_run_id=ingest_run_id)
     return ProcessSummary(
+        ingest_run_id=ingest_run_id,
         queued_count=hashed.queued_count,
         skipped_count=hashed.skipped_count,
         processed_count=processed.processed_count,
         failed_count=processed.failed_count + wiki_summary.failed_count,
         pending_image_count=hashed.pending_image_count + processed.pending_image_count,
         wiki_generation=wiki_summary.model_dump(),
+        lint=lint_summary.__dict__,
     )
 
 

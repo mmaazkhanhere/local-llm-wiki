@@ -98,3 +98,44 @@
 [11/05/2026 12:45:00] change-log.md:98 Logged Phase 5 Ask implementation updates.
 [11/05/2026 12:53:00] apps/desktop/backend/llm_wiki_backend/ask/service.py:49 Tightened raw fallback so Ask uses raw chunks only when no wiki evidence is found.
 [11/05/2026 12:53:00] change-log.md:100 Logged Ask retrieval fallback correction and local Phase 5 test pass verification.
+[11/05/2026 18:32:29] apps/desktop/backend/llm_wiki_backend/db/service.py:1 Add Phase 6 lint tables (lint_runs, lint_issues) and indexes during DB init.
+[11/05/2026 18:32:29] apps/desktop/backend/llm_wiki_backend/lint/service.py:1 Add minimal post-ingest lint runner + latest status query (Phase 6.1 scaffold).
+[11/05/2026 18:32:29] apps/desktop/backend/llm_wiki_backend/wiki/service.py:1 Allow callers to supply ingest_run_id so downstream lint/audit can link runs.
+[11/05/2026 18:32:29] apps/desktop/backend/llm_wiki_backend/ingestion/service.py:1 Generate ingest_run_id per ingest and trigger post-ingest lint; return lint summary.
+[11/05/2026 18:32:29] apps/desktop/backend/llm_wiki_backend/api/router/lint_router.py:1 Add lint API endpoints (/lint/latest, /lint/run).
+[11/05/2026 18:32:29] apps/desktop/backend/llm_wiki_backend/api/router/ingest_router.py:1 Ensure lint runs after manual /raw/process path and returns ingest_run_id + lint summary.
+[11/05/2026 18:32:29] apps/desktop/backend/tests/test_phase6.py:1 Add Phase 6.1 tests for lint auto-run after ingest and latest lint endpoint.
+[11/05/2026 18:32:29] docs/generated/db-schema.md:1 Document lint tables and indexes in generated schema mirror.
+[11/05/2026 18:35:59] apps/desktop/backend/llm_wiki_backend/wiki/service.py:153 Gate coverage-check LLM call to real Groq provider to keep test fakes deterministic and avoid extra unexpected LLM calls.
+[11/05/2026 18:38:25] apps/desktop/backend/llm_wiki_backend/wiki/models.py:78 Relax update-plan schema: allow missing target_path and resolve proposals by title when needed.
+[11/05/2026 18:38:25] apps/desktop/backend/llm_wiki_backend/wiki/review_service.py:203 Match proposed update items by target_title when LLM omits target_path (keeps workflow robust and tests deterministic).
+[11/05/2026 18:40:29] apps/desktop/backend/llm_wiki_backend/lint/service.py:1 Implement Phase 6.2 deterministic mechanical lint checks (broken links, missing index entries, duplicates, empties) and persist issues to SQLite.
+[11/05/2026 18:40:29] apps/desktop/backend/tests/test_phase6.py:1 Add Phase 6.2 tests covering mechanical lint issue persistence for broken links + missing index entry.
+[11/05/2026 18:42:56] apps/desktop/backend/llm_wiki_backend/lint/service.py:1 Expand mechanical lint to include broken raw source references, invalid frontmatter fences, and missing log entries.
+[11/05/2026 18:42:56] apps/desktop/backend/tests/test_phase6.py:1 Add mechanical lint test for broken raw source reference + invalid frontmatter detection.
+[11/05/2026 18:44:15] apps/desktop/backend/llm_wiki_backend/lint/service.py:1 Add Phase 6.3 provenance lint to flag wiki pages missing Raw-backed Source references.
+[11/05/2026 18:44:15] apps/desktop/backend/tests/test_phase6.py:1 Add provenance lint test ensuring missing sources are recorded as lint issues.
+[11/05/2026 18:46:39] apps/desktop/backend/llm_wiki_backend/db/service.py:1 Add `lint_fixes` table to persist safe fix diffs/results.
+[11/05/2026 18:46:39] apps/desktop/backend/llm_wiki_backend/lint/service.py:1 Implement Phase 6.4 safe mechanical auto-fixes with dry-run support and audit events for applied writes.
+[11/05/2026 18:46:39] apps/desktop/backend/llm_wiki_backend/api/router/lint_router.py:1 Add `/lint/fix/apply` endpoint to run safe auto-fixes for a lint run.
+[11/05/2026 18:46:39] apps/desktop/backend/tests/test_phase6.py:1 Add test covering dry-run vs apply behavior for missing index entry auto-fix.
+[11/05/2026 18:46:39] docs/generated/db-schema.md:1 Document `lint_fixes` table and index in schema mirror.
+[11/05/2026 18:48:59] packages/shared/prompts/lint_semantic.md:1 Add semantic lint system prompt template for Phase 6.5.
+[11/05/2026 18:48:59] apps/desktop/backend/llm_wiki_backend/lint/models.py:1 Add Pydantic schema for semantic lint results to validate LLM output.
+[11/05/2026 18:48:59] apps/desktop/backend/llm_wiki_backend/lint/service.py:1 Add semantic lint runner that stores issues only (no edits) and upgrades status to needs_review when semantic issues exist.
+[11/05/2026 18:48:59] apps/desktop/backend/llm_wiki_backend/api/router/lint_router.py:1 Add `semantic` option on `/lint/run` to trigger semantic lint pass.
+[11/05/2026 18:48:59] apps/desktop/backend/tests/test_phase6.py:1 Add semantic lint test using mocked provider and verifying issues persisted to SQLite.
+[11/05/2026 18:51:06] apps/desktop/backend/llm_wiki_backend/db/service.py:1 Add `review_pages` table + indexes to persist semantic review artifacts.
+[11/05/2026 18:51:06] apps/desktop/backend/llm_wiki_backend/lint/service.py:1 Add Phase 6.6 semantic review page generator writing to `Wiki/Reviews/` with fingerprint-based dedupe.
+[11/05/2026 18:51:06] apps/desktop/backend/llm_wiki_backend/api/router/lint_router.py:1 Add `/lint/reviews/create` endpoint to materialize semantic issues as review pages.
+[11/05/2026 18:51:06] apps/desktop/backend/tests/test_phase6.py:1 Add test verifying semantic review page creation + duplicate avoidance.
+[11/05/2026 18:51:06] docs/generated/db-schema.md:1 Document `review_pages` table and indexes in schema mirror.
+[11/05/2026 18:54:33] apps/desktop/electron/electron/main.mjs:1 Add Electron IPC handlers for lint status/run/fixes/review page creation endpoints.
+[11/05/2026 18:54:33] apps/desktop/electron/electron/preload.mjs:1 Expose lint API functions to renderer via window.desktopApi.
+[11/05/2026 18:54:33] apps/desktop/electron/src/global.d.ts:1 Extend desktopApi typings with lint functions.
+[11/05/2026 18:54:33] apps/desktop/electron/src/App.jsx:1 Add Lint view UI + dashboard lint summary, and wire lint actions through Electron bridge.
+[11/05/2026 18:57:39] apps/desktop/backend/llm_wiki_backend/lint/service.py:1 Append Phase 6 lint summary sections to `Wiki/log.md`, audit log appends, and keep lint_runs counters in sync when semantic lint/fixes/review pages are applied.
+[11/05/2026 18:57:39] apps/desktop/backend/llm_wiki_backend/api/router/lint_router.py:1 Return refreshed lint run summary after optional semantic lint so UI reflects updated counters/status.
+[11/05/2026 22:46:37] apps/desktop/electron/src/App.jsx:5 Rename Lint nav tab label to "Content Review" while keeping internal view key unchanged.
+[11/05/2026 22:48:42] apps/desktop/electron/src/App.jsx:1146 Rename semantic lint CTA button to "Review Content using AI" for clearer UX.
+[11/05/2026 22:50:47] apps/desktop/electron/src/App.jsx:1163 Rename safe-fix buttons to "Fix Content" and "Apply Fixes" for clearer UX.

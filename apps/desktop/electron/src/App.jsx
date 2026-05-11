@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 
 const LAST_VAULT_PATH_KEY = "local-llm-wiki:last-vault-path";
 
+const NAV_LABELS = {
+  Lint: "Content Review"
+};
+
+function viewLabel(viewName) {
+  return NAV_LABELS[viewName] ?? viewName;
+}
+
 const NAV_ITEMS = [
   "Dashboard",
   "Raw Inbox",
@@ -48,6 +56,11 @@ export function App() {
   const [askMessage, setAskMessage] = useState("Ask is ready.");
   const [askResult, setAskResult] = useState(null);
   const [askTargetPath, setAskTargetPath] = useState("");
+  const [lintLatest, setLintLatest] = useState(null);
+  const [lintMessage, setLintMessage] = useState("Lint is ready.");
+  const [lintBusy, setLintBusy] = useState(false);
+  const [lintFixResult, setLintFixResult] = useState(null);
+  const [lintReviewResult, setLintReviewResult] = useState(null);
 
   function saveLastVaultPath(pathValue) {
     try {
@@ -88,6 +101,7 @@ export function App() {
     await refreshGroqStatus(selected.payload.vault_path);
     await refreshRawInbox(selected.payload.vault_path);
     await refreshReviews(selected.payload.vault_path);
+    await refreshLintLatest(selected.payload.vault_path);
     await ensureRawWatcherRunning(selected.payload.vault_path);
     const warning = selected.payload.warning ? ` Warning: ${selected.payload.warning}` : "";
     setVaultMessage(`Restored previous vault.${warning}`);
@@ -319,6 +333,18 @@ export function App() {
       await loadProposal(pathValue, preferredId);
     }
     setReviewMessage(`Loaded ${proposals.length} pending proposal${proposals.length === 1 ? "" : "s"}.`);
+  }
+
+  async function refreshLintLatest(pathValue) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !pathValue) return;
+    const result = await desktopApi.lintLatest(pathValue);
+    if (!result.ok || !result.payload) {
+      setLintMessage(`Lint status unavailable: ${result.error ?? "Unknown error"}`);
+      setLintLatest(null);
+      return;
+    }
+    setLintLatest(result.payload.latest ?? null);
   }
 
   async function loadProposal(pathValue, proposalId) {
@@ -599,6 +625,73 @@ export function App() {
     await refreshReviews(vaultPath, false);
   }
 
+  async function runLint({ semantic = true } = {}) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath) {
+      setLintMessage("Select and initialize a vault first.");
+      return;
+    }
+    setLintBusy(true);
+    setLintMessage("Running lint...");
+    const result = await desktopApi.lintRun(vaultPath, { semantic: Boolean(semantic) });
+    setLintBusy(false);
+    if (!result.ok || !result.payload) {
+      setLintMessage(`Lint failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setLintLatest(result.payload.result ?? null);
+    setLintFixResult(null);
+    setLintReviewResult(null);
+    setLintMessage("Lint complete.");
+    await refreshLintLatest(vaultPath);
+  }
+
+  async function runSafeFixes(dryRun = true) {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath) {
+      setLintMessage("Select and initialize a vault first.");
+      return;
+    }
+    const lintRunIdValue = lintLatest?.lint_run_id;
+    if (!lintRunIdValue) {
+      setLintMessage("Run lint first.");
+      return;
+    }
+    setLintBusy(true);
+    setLintMessage(dryRun ? "Planning safe fixes..." : "Applying safe fixes...");
+    const result = await desktopApi.lintFixApply(vaultPath, lintRunIdValue, Boolean(dryRun));
+    setLintBusy(false);
+    if (!result.ok || !result.payload) {
+      setLintMessage(`Fixes failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setLintFixResult(result.payload);
+    setLintMessage(dryRun ? "Dry-run complete." : "Fixes applied.");
+  }
+
+  async function createReviewPages() {
+    const desktopApi = window.desktopApi;
+    if (!desktopApi || !vaultPath) {
+      setLintMessage("Select and initialize a vault first.");
+      return;
+    }
+    const lintRunIdValue = lintLatest?.lint_run_id;
+    if (!lintRunIdValue) {
+      setLintMessage("Run lint first.");
+      return;
+    }
+    setLintBusy(true);
+    setLintMessage("Creating review pages...");
+    const result = await desktopApi.lintReviewsCreate(vaultPath, lintRunIdValue);
+    setLintBusy(false);
+    if (!result.ok || !result.payload) {
+      setLintMessage(`Create review pages failed: ${result.error ?? "Unknown error"}`);
+      return;
+    }
+    setLintReviewResult(result.payload);
+    setLintMessage(`Created ${result.payload.created?.length ?? 0} review page(s).`);
+  }
+
   useEffect(() => {
     if (!vaultPath || !watchStatus.running) {
       return undefined;
@@ -664,6 +757,7 @@ export function App() {
   const isRawInbox = activeView === "Raw Inbox";
   const isProposedUpdates = activeView === "Proposed Updates";
   const isAsk = activeView === "Ask";
+  const isLint = activeView === "Lint";
   const hasUnsavedProposalEdits = Boolean(selectedProposal) && reviewEditorContent !== reviewSavedContent;
 
   return (
@@ -677,7 +771,7 @@ export function App() {
               className={item === activeView ? "nav-btn active" : "nav-btn"}
               onClick={() => setActiveView(item)}
             >
-              {item}
+              {viewLabel(item)}
             </button>
           ))}
         </nav>
@@ -694,12 +788,12 @@ export function App() {
             {eventsConnected ? "Live events" : "Polling"}
           </div>
           <div>
-            <strong>View:</strong> {activeView}
+            <strong>View:</strong> {viewLabel(activeView)}
           </div>
         </header>
 
         <section className="panel">
-          <h2>{activeView}</h2>
+          <h2>{viewLabel(activeView)}</h2>
           {isDashboard && (
             <div className="stack">
               <button type="button" className="action-btn" onClick={connectVault}>
@@ -718,6 +812,12 @@ export function App() {
               </p>
               <p><strong>Groq model:</strong> {groqStatus.model}</p>
               <p><strong>Pending proposals:</strong> {reviewProposals.length}</p>
+              <p>
+                <strong>Lint:</strong>{" "}
+                {lintLatest
+                  ? `${lintLatest.status} (mechanical=${lintLatest.mechanical_issue_count}, semantic=${lintLatest.semantic_issue_count})`
+                  : "No lint run yet."}
+              </p>
               <p>
                 <strong>Obsidian CLI:</strong> {status.obsidianCliAvailable ? "Available" : "Unavailable"}.
                 Core functionality works without it.
@@ -1039,7 +1139,46 @@ export function App() {
               )}
             </div>
           )}
-          {!isDashboard && !isSettings && !isRawInbox && !isProposedUpdates && !isAsk && (
+          {isLint && (
+            <div className="stack">
+              <div className="row">
+                <button type="button" className="action-btn" onClick={() => runLint({ semantic: true })} disabled={lintBusy}>
+                  {lintBusy ? "Working..." : "Review Content using AI"}
+                </button>
+                <button type="button" className="nav-btn" onClick={() => refreshLintLatest(vaultPath)} disabled={lintBusy || !vaultPath}>
+                  Refresh Status
+                </button>
+              </div>
+              <p>{lintMessage}</p>
+              {lintLatest && (
+                <div className="stack">
+                  <p><strong>Lint run:</strong> {lintLatest.lint_run_id}</p>
+                  <p><strong>Status:</strong> {lintLatest.status}</p>
+                  <p>
+                    <strong>Counts:</strong> mechanical={lintLatest.mechanical_issue_count}, semantic={lintLatest.semantic_issue_count}, fixes={lintLatest.fixes_applied_count}, review_pages={lintLatest.review_pages_created_count}
+                  </p>
+                </div>
+              )}
+              <div className="row">
+                <button type="button" className="nav-btn" onClick={() => runSafeFixes(true)} disabled={lintBusy || !lintLatest}>
+                  Fix Content
+                </button>
+                <button type="button" className="action-btn" onClick={() => runSafeFixes(false)} disabled={lintBusy || !lintLatest}>
+                  Apply Fixes
+                </button>
+                <button type="button" className="nav-btn" onClick={createReviewPages} disabled={lintBusy || !lintLatest}>
+                  Create Review Pages
+                </button>
+              </div>
+              {lintFixResult && (
+                <p><strong>Fix result:</strong> planned={lintFixResult.planned}, applied={lintFixResult.applied}</p>
+              )}
+              {lintReviewResult && (
+                <p><strong>Review pages:</strong> created={lintReviewResult.created?.length ?? 0}</p>
+              )}
+            </div>
+          )}
+          {!isDashboard && !isSettings && !isRawInbox && !isProposedUpdates && !isAsk && !isLint && (
             <p>
               This is the Phase 0 UI shell placeholder for <strong>{activeView}</strong>.
             </p>

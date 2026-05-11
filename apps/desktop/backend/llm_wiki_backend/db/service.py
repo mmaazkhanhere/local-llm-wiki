@@ -11,6 +11,7 @@ def initialize_database(vault_path: Path) -> Path:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.executescript(_schema_sql())
         conn.executescript(_phase2_schema_sql())
+        conn.executescript(_phase6_schema_sql())
         _ensure_column(conn, "files", "wiki_generated_sha256", "TEXT")
         _ensure_column(conn, "files", "wiki_generated_at", "TEXT")
         _ensure_column(conn, "wiki_pages", "title", "TEXT")
@@ -180,6 +181,65 @@ def _phase2_schema_sql() -> str:
       summary,
       content
     );
+    """
+
+
+def _phase6_schema_sql() -> str:
+    return """
+    CREATE TABLE IF NOT EXISTS lint_runs (
+      id TEXT PRIMARY KEY,
+      ingest_run_id TEXT,
+      status TEXT NOT NULL,
+      mechanical_issue_count INTEGER NOT NULL,
+      semantic_issue_count INTEGER NOT NULL,
+      fixes_applied_count INTEGER NOT NULL,
+      review_pages_created_count INTEGER NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      error_message TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS lint_issues (
+      id TEXT PRIMARY KEY,
+      lint_run_id TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      issue_type TEXT NOT NULL,
+      page_relative_path TEXT,
+      status TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      details_json TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS lint_fixes (
+      id TEXT PRIMARY KEY,
+      lint_run_id TEXT NOT NULL,
+      issue_fingerprint TEXT NOT NULL,
+      fix_type TEXT NOT NULL,
+      target_relative_path TEXT,
+      dry_run INTEGER NOT NULL,
+      before_content TEXT,
+      after_content TEXT,
+      diff_json TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS review_pages (
+      id TEXT PRIMARY KEY,
+      lint_run_id TEXT NOT NULL,
+      issue_fingerprint TEXT NOT NULL,
+      issue_type TEXT NOT NULL,
+      review_relative_path TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lint_runs_ingest ON lint_runs(ingest_run_id);
+    CREATE INDEX IF NOT EXISTS idx_lint_issues_run ON lint_issues(lint_run_id);
+    CREATE INDEX IF NOT EXISTS idx_lint_issues_severity ON lint_issues(severity);
+    CREATE INDEX IF NOT EXISTS idx_lint_issues_fingerprint ON lint_issues(fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_lint_fixes_run ON lint_fixes(lint_run_id);
+    CREATE INDEX IF NOT EXISTS idx_review_pages_run ON review_pages(lint_run_id);
+    CREATE INDEX IF NOT EXISTS idx_review_pages_fingerprint ON review_pages(issue_fingerprint);
     """
 
 

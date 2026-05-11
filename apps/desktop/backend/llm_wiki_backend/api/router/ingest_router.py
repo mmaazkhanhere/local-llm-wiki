@@ -16,6 +16,7 @@ from llm_wiki_backend.ingestion.service import (
     process_queued_files,
     scan_raw_files,
 )
+from llm_wiki_backend.lint.service import run_post_ingest_smoke_lint
 from llm_wiki_backend.ingestion.watcher import RAW_WATCHER
 from llm_wiki_backend.vault.service import validate_vault
 from llm_wiki_backend.wiki.service import generate_wiki_for_pending_sources
@@ -53,11 +54,17 @@ def raw_process(vault_path: str) -> IngestSummaryResponse:
         vault, _ = validate_vault(vault_path)
     except VaultValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    import uuid
+
+    ingest_run_id = str(uuid.uuid4())
     summary = process_queued_files(vault)
-    wiki_summary = generate_wiki_for_pending_sources(vault)
+    wiki_summary = generate_wiki_for_pending_sources(vault, ingest_run_id=ingest_run_id)
+    lint_summary = run_post_ingest_smoke_lint(vault_path=vault, ingest_run_id=ingest_run_id)
     payload = summary.__dict__.copy()
+    payload["ingest_run_id"] = ingest_run_id
     payload["failed_count"] = summary.failed_count + wiki_summary.failed_count
     payload["wiki_generation"] = wiki_summary.model_dump()
+    payload["lint"] = lint_summary.__dict__
     return IngestSummaryResponse(**payload)
 
 

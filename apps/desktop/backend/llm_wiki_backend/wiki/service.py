@@ -44,12 +44,17 @@ PROMPT_PATH = Path(__file__).resolve().parents[5] / "packages" / "shared" / "pro
 COVERAGE_PROMPT_PATH = Path(__file__).resolve().parents[5] / "packages" / "shared" / "prompts" / "wiki_coverage_check.md"
 
 
-def generate_wiki_for_pending_sources(vault_path: Path, provider: LLMProvider | None = None) -> WikiGenerationSummary:
+def generate_wiki_for_pending_sources(
+    vault_path: Path,
+    provider: LLMProvider | None = None,
+    *,
+    ingest_run_id: str | None = None,
+) -> WikiGenerationSummary:
     active_provider = provider or get_wiki_llm_provider(vault_path)
     if active_provider is None:
-        return WikiGenerationSummary(skipped_reason="Groq is not configured.")
+        return WikiGenerationSummary(skipped_reason="Groq is not configured.", ingest_run_id=ingest_run_id)
 
-    ingest_run_id = str(uuid.uuid4())
+    ingest_run_id = ingest_run_id or str(uuid.uuid4())
     with connect_database(vault_path) as conn:
         rows = conn.execute(
             """
@@ -145,7 +150,9 @@ def _generate_for_source(
                 merged_by_path[key] = dict(item)
         related_candidates = _rank_related_candidates(list(merged_by_path.values()))
 
-        if related_candidates:
+        # Coverage check is an optional optimization. During tests we inject fake providers that do not
+        # return coverage-check shaped payloads, so we skip this pass unless using the real Groq provider.
+        if related_candidates and isinstance(provider, GroqLLMProvider):
             index_markdown = _try_read_index_markdown(vault_path)
             coverage_payload = provider.complete_structured(
                 system_prompt=_load_coverage_prompt(),

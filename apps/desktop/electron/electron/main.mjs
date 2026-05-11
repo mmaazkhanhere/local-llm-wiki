@@ -432,6 +432,35 @@ ipcMain.handle("ask-propose-update", async (_, vaultPath, payload) =>
   backendPost("/ask/propose-update", payload, `?vault_path=${encodeURIComponent(vaultPath)}`)
 );
 
+ipcMain.handle("lint-latest", async (_, vaultPath) =>
+  backendGet("/lint/latest", `?vault_path=${encodeURIComponent(vaultPath)}`)
+);
+
+ipcMain.handle("lint-run", async (_, vaultPath, { ingestRunId = null, semantic = false } = {}) => {
+  const query = `?vault_path=${encodeURIComponent(vaultPath)}${
+    ingestRunId ? `&ingest_run_id=${encodeURIComponent(ingestRunId)}` : ""
+  }&semantic=${encodeURIComponent(String(Boolean(semantic)))}`;
+  return backendPost("/lint/run", {}, query);
+});
+
+ipcMain.handle("lint-fix-apply", async (_, vaultPath, lintRunId, dryRun = true) =>
+  backendPost(
+    "/lint/fix/apply",
+    {},
+    `?vault_path=${encodeURIComponent(vaultPath)}&lint_run_id=${encodeURIComponent(lintRunId)}&dry_run=${encodeURIComponent(
+      String(Boolean(dryRun))
+    )}`
+  )
+);
+
+ipcMain.handle("lint-reviews-create", async (_, vaultPath, lintRunId) =>
+  backendPost(
+    "/lint/reviews/create",
+    {},
+    `?vault_path=${encodeURIComponent(vaultPath)}&lint_run_id=${encodeURIComponent(lintRunId)}`
+  )
+);
+
 app.whenReady().then(async () => {
   await startBackend();
   await createWindow();

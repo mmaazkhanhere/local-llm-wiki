@@ -77,7 +77,7 @@ class WikiGenerationSummary(BaseModel):
 
 class RelatedPageCandidate(BaseModel):
     target_title: str = Field(min_length=1)
-    target_path: str = Field(min_length=1)
+    target_path: str | None = None
     reason: str = Field(min_length=1)
     confidence: Literal["low", "medium", "high"]
     source_citations: list[SourceCitation] = Field(min_length=1)

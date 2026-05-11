@@ -83,6 +83,20 @@ declare global {
         payload?: { proposal_id: string; review_path: string };
         error?: string;
       }>;
+      lintLatest: (vaultPath: string) => Promise<{ ok: boolean; payload?: { latest: Record<string, unknown> | null }; error?: string }>;
+      lintRun: (
+        vaultPath: string,
+        options?: { ingestRunId?: string | null; semantic?: boolean }
+      ) => Promise<{ ok: boolean; payload?: { result: Record<string, unknown> }; error?: string }>;
+      lintFixApply: (
+        vaultPath: string,
+        lintRunId: string,
+        dryRun?: boolean
+      ) => Promise<{ ok: boolean; payload?: { planned: number; applied: number; fixes: Array<Record<string, unknown>> }; error?: string }>;
+      lintReviewsCreate: (
+        vaultPath: string,
+        lintRunId: string
+      ) => Promise<{ ok: boolean; payload?: { created: Array<Record<string, unknown>> }; error?: string }>;
       onBackendExited: (listener: (payload: { code: number | null }) => void) => void;
     };
   }

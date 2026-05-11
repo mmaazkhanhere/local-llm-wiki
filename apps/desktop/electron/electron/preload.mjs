@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld("desktopApi", {
     ipcRenderer.invoke("review-approve-all", vaultPath, sourceRelativePath),
   askQuery: (vaultPath, question) => ipcRenderer.invoke("ask-query", vaultPath, question),
   askProposeUpdate: (vaultPath, payload) => ipcRenderer.invoke("ask-propose-update", vaultPath, payload),
+  lintLatest: (vaultPath) => ipcRenderer.invoke("lint-latest", vaultPath),
+  lintRun: (vaultPath, options) => ipcRenderer.invoke("lint-run", vaultPath, options),
+  lintFixApply: (vaultPath, lintRunId, dryRun = true) => ipcRenderer.invoke("lint-fix-apply", vaultPath, lintRunId, dryRun),
+  lintReviewsCreate: (vaultPath, lintRunId) => ipcRenderer.invoke("lint-reviews-create", vaultPath, lintRunId),
   onBackendExited: (listener) => {
     ipcRenderer.on("backend-exited", (_, payload) => listener(payload));
   }

@@ -178,6 +178,69 @@ CREATE TABLE review_items (
 );
 ```
 
+### `lint_runs`
+
+```sql
+CREATE TABLE lint_runs (
+  id TEXT PRIMARY KEY,
+  ingest_run_id TEXT,
+  status TEXT NOT NULL,
+  mechanical_issue_count INTEGER NOT NULL,
+  semantic_issue_count INTEGER NOT NULL,
+  fixes_applied_count INTEGER NOT NULL,
+  review_pages_created_count INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  error_message TEXT
+);
+```
+
+### `lint_issues`
+
+```sql
+CREATE TABLE lint_issues (
+  id TEXT PRIMARY KEY,
+  lint_run_id TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  issue_type TEXT NOT NULL,
+  page_relative_path TEXT,
+  status TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  details_json TEXT,
+  created_at TEXT NOT NULL
+);
+```
+
+### `lint_fixes`
+
+```sql
+CREATE TABLE lint_fixes (
+  id TEXT PRIMARY KEY,
+  lint_run_id TEXT NOT NULL,
+  issue_fingerprint TEXT NOT NULL,
+  fix_type TEXT NOT NULL,
+  target_relative_path TEXT,
+  dry_run INTEGER NOT NULL,
+  before_content TEXT,
+  after_content TEXT,
+  diff_json TEXT,
+  created_at TEXT NOT NULL
+);
+```
+
+### `review_pages`
+
+```sql
+CREATE TABLE review_pages (
+  id TEXT PRIMARY KEY,
+  lint_run_id TEXT NOT NULL,
+  issue_fingerprint TEXT NOT NULL,
+  issue_type TEXT NOT NULL,
+  review_relative_path TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+```
+
 ## Indexes
 
 ```sql
@@ -188,6 +251,13 @@ CREATE INDEX idx_chunks_extraction ON chunks(extraction_id);
 CREATE INDEX idx_wiki_pages_relative_path ON wiki_pages(relative_path);
 CREATE INDEX idx_proposed_updates_status ON proposed_updates(status);
 CREATE INDEX idx_proposed_updates_source ON proposed_updates(source_relative_path);
+CREATE INDEX idx_lint_runs_ingest ON lint_runs(ingest_run_id);
+CREATE INDEX idx_lint_issues_run ON lint_issues(lint_run_id);
+CREATE INDEX idx_lint_issues_severity ON lint_issues(severity);
+CREATE INDEX idx_lint_issues_fingerprint ON lint_issues(fingerprint);
+CREATE INDEX idx_lint_fixes_run ON lint_fixes(lint_run_id);
+CREATE INDEX idx_review_pages_run ON review_pages(lint_run_id);
+CREATE INDEX idx_review_pages_fingerprint ON review_pages(issue_fingerprint);
 ```
 
 ## `files.processing_status` values in use
